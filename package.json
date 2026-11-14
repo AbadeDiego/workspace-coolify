@@ -1,0 +1,17 @@
+{
+  "name": "workspace-coolify",
+  "version": "1.0.0",
+  "description": "Workspace de gestão multi-startup com PostgreSQL",
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/server.mjs"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "pg": "8.23.1"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true
+}
