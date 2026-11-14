@@ -1,0 +1,55 @@
+# Workspace na VPS com Coolify
+
+A aplicação reúne a interface responsiva, a API Node.js 24 e o PostgreSQL 18. A API valida acesso por perfil e startup. O banco prepara o esquema e os cadastros iniciais na primeira inicialização. O volume `workspace-postgres` guarda os dados entre atualizações dos contêineres.
+
+A carga inicial inclui Diego, Eduarda, Larissa, Annike e Vanessa, suas startups, modelos de processos, os três produtos de materiais de palma e os **93 leads de prospecção ativa do Coleta Certa**. A conta de Diego é criada com as credenciais definidas na primeira implantação. Os quatro demais perfis ficam suspensos até você definir e-mail e senha em **Pessoas → Perfil e acesso**. A base começa sem as atividades, contratos e valores fictícios do protótipo. Registros feitos localmente na antiga versão HTML ficam no navegador de origem, pois o servidor recebe apenas os dados incluídos no pacote.
+
+## Implantar na VPS
+
+1. Extraia o ZIP. Suba o conteúdo da pasta `workspace-coolify` para a raiz de um **repositório privado**, incluindo os arquivos que começam com ponto. O pacote contém os dados de prospecção semeados em `src/seed.json`.
+2. Aponte o registro DNS do subdomínio escolhido para o IP da VPS da Hostinger. Confirme que o proxy do Coolify está ativo e que as portas TCP 80 e 443 estão acessíveis.
+3. No Coolify, crie **Application** a partir do repositório privado. Selecione **Docker Compose** e indique `/compose.yaml` com Base Directory `/`. Se mantiver a pasta dentro do repositório, use `/workspace-coolify` como Base Directory.
+4. Nas variáveis da aplicação, configure os valores da tabela abaixo. Em **Domains**, adicione o domínio HTTPS ao serviço `app` com porta interna **3000**. O serviço `db` fica na rede interna.
+5. Clique em **Deploy**. Aguarde os dois serviços ficarem saudáveis. Abra `https://SEU-DOMINIO/healthz` e confirme `{"ok":true}`. Abra o endereço principal, entre com a conta de Diego e ative os demais perfis.
+
+| Variável | Valor |
+| --- | --- |
+| `APP_ORIGIN` | URL pública exata, por exemplo `https://workspace.seudominio.com.br`. Omita a porta interna 3000 e o caminho. |
+| `POSTGRES_PASSWORD` | Senha aleatória longa. Use o mesmo valor enquanto esse volume existir. Alterar a variável após a inicialização exige alterar a senha no PostgreSQL também. |
+| `ADMIN_EMAIL` | E-mail de Diego no primeiro deploy. |
+| `ADMIN_PASSWORD` | Senha inicial de Diego com pelo menos 12 caracteres e até 256 bytes. |
+
+Depois de validar o primeiro login, você pode limpar `ADMIN_PASSWORD` no Coolify. Em um banco existente, editar essa variável não altera a senha da conta. Use a ficha de Diego em **Pessoas** para alterar sua senha. O login usa a origem HTTPS configurada em `APP_ORIGIN`.
+
+[Documentação do Docker Compose no Coolify](https://coolify.io/docs/applications/builds/docker-compose) · [Domínios do Coolify](https://coolify.io/docs/core/networking/domains)
+
+## Rotinas de Social Media
+
+Ao registrar a publicação de um Reel no Instagram em **Marketing**, o Workspace cria duas atividades em **Meu dia**, com prazos de 7 e 14 dias a partir da publicação. A pessoa responsável abre o Reel original a partir da atividade, compartilha nos Stories pelo Instagram e registra a evidência na conclusão. Essas atividades não geram remuneração.
+
+Em **Remuneração da equipe → Crescimento de seguidores**, Diego valida a contagem total de cada conta do Instagram. A primeira medição de uma conta é a base. As posteriores creditam somente o crescimento acima da maior contagem já validada. A cada 1.000 seguidores novos acumulados nas contas da pessoa, entram R$ 500 no extrato de **Finanças pessoais**, no mês da validação. O restante segue acumulado para o próximo bloco.
+
+## Backup e restauração
+
+Faça backup periódico e guarde cópias fora da VPS. O banco inclui registros e anexos. No terminal da VPS, encontre o contêiner pelo Coolify ou com `docker ps`. Substitua `NOME_DO_CONTAINER_DB` abaixo.
+
+```sh
+docker exec NOME_DO_CONTAINER_DB pg_dump -U workspace -d workspace -Fc -T workspace_sessions -T login_attempts > workspace.dump
+```
+
+O dump preserva a estrutura e os dados de negócio. As tabelas de sessão e tentativas serão recriadas vazias pela aplicação. Teste a restauração em um PostgreSQL separado, com um banco vazio, antes de qualquer substituição em produção.
+
+```sh
+docker exec -i NOME_DO_CONTAINER_TESTE pg_restore -U workspace -d workspace --no-owner --no-privileges --exit-on-error < workspace.dump
+```
+
+Atualize o app via deploy do repositório mantendo o volume. O contêiner define uma verificação de saúde para a API e outra para o PostgreSQL. O banco persiste em SQL com registros JSONB e transações para os fluxos com vários registros.
+
+## Testes
+
+```sh
+npm ci
+TEST_DATABASE_URL=postgres://USUARIO:SENHA@HOST:5432/postgres npm test
+```
+
+Use um servidor de teste. A suíte cria e remove um banco temporário e verifica os cinco perfis, escopos de acesso, os 93 leads, anexos, aprovação de entregas, propostas, pagamentos concorrentes e continuidade após reiniciar a aplicação.
