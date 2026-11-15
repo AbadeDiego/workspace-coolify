@@ -2790,6 +2790,29 @@ function taskEvidence(task) {
       itemRef(task.id) + ' data-value="concluida"', "small primary")}</div>` : ""}`;
 }
 
+const usesPublicationEvidence = task => String(task.assigned_to) === "4";
+const latestPublicationEvidence = task => (task.evidence_log || []).findLast(entry => entry.published_on && entry.url);
+
+function publicationTaskDetail(task) {
+  const publication = latestPublicationEvidence(task);
+  const accepted = task.status === "concluida";
+  const contractReel = String(task.id).startsWith("annike-cabratech-2026-reel-");
+  const publicationInfo = publication
+    ? `<p><b>Publicação em ${human(publication.published_on)}</b></p><p>${externalLink(publication.url, "Abrir publicação")}</p>`
+    : accepted ? '<p class="muted">Data e link da publicação ainda não registrados.</p>' : "";
+  const action = publication ? "Atualizar publicação" : accepted ? "Registrar publicação" : "Concluir entrega";
+  dialog(task.title,
+    `<div class="detail-summary">${badge(task.status)}${task.due_date ? badge("Prazo " + human(task.due_date)) : ""}</div>
+    ${!contractReel && task.description ? `<p class="detail-description">${e(task.description)}</p>` : ""}
+    ${publicationInfo}
+    ${taskPaySummary(task)}
+    <div class="form-actions">
+      ${admin() ? button("Editar atividade", "task-edit", itemRef(task.id)) : ""}
+      ${task.status !== "cancelada"
+        ? button(action, "task-status", itemRef(task.id) + ' data-value="concluida"', "primary") : ""}
+    </div>`);
+}
+
 async function setTaskStatus(id, status) {
   if (status !== "concluida") {
     await api("/api/tasks/" + id, "PATCH", { status });
@@ -2798,6 +2821,17 @@ async function setTaskStatus(id, status) {
   }
   const task = await api("/api/tasks/" + id);
   const alreadyDone = task.status === "concluida";
+  if (usesPublicationEvidence(task)) {
+    const publication = latestPublicationEvidence(task);
+    return formModal(alreadyDone ? "Registrar publicação" : "Concluir entrega",
+      date("Data da publicação", "published_on", publication?.published_on || "", `required max="${today()}"`) +
+      sf("Link da publicação", "url", publication?.url || "", "url", 'required maxlength="3000"'),
+      ({ published_on, url }) => api("/api/tasks/" + id, "PATCH", {
+        status, evidence: { published_on, url },
+      }),
+      { submit: alreadyDone ? "Salvar publicação" : "Concluir entrega" },
+    );
+  }
   return formModal(alreadyDone ? "Adicionar evidência" : "Concluir atividade",
     `<div class="notice full"><b>${e(task.title)}</b><br>Preencha pelo menos uma forma de evidência.</div>` +
     text("O que foi realizado", "note", "", 'maxlength="3000"') +
@@ -2817,6 +2851,7 @@ async function setTaskStatus(id, status) {
 
 async function taskDetail(id) {
   const t = await api("/api/tasks/" + id);
+  if (usesPublicationEvidence(t)) return publicationTaskDetail(t);
   dialog(
     t.title,
     `<div class="detail-summary">${badge(startupName(t.startup_id), "blue")}${t.product_name?badge(t.product_name,"blue"):""}${badge(t.source === "story_repost" ? "Repostagem · sem remuneração" : t.source === "propria" ? "Atividade própria" : "Definida pela gestão")}${priority(t.priority)}${badge(t.status)}${t.planned_date ? badge("Execução " + human(t.planned_date)) : ""}${t.due_date ? badge("Prazo " + human(t.due_date)) : ""}</div><p class="detail-description">${e(t.description || "Sem descrição adicional.")}</p>${externalLink(t.source_url, "Abrir Reel original")}${taskPaySummary(t)}${taskEvidence(t)}<div class="section-label">CHECKLIST · ${(t.checklist || []).filter((x) => x.done).length}/${(t.checklist || []).length}</div>${(t.checklist || []).map((x) => `<label class="checklist-row ${x.done ? "done" : ""}"><input type="checkbox" data-task-check="${t.id}" data-check-id="${e(x.id)}" ${x.done ? "checked" : ""}><span>${e(x.title)}</span></label>`).join("") || '<div class="tiny muted">Nenhuma etapa cadastrada.</div>'}<div class="section-label">COMENTÁRIOS</div>${(t.comments || []).map((x) => `<div class="comment">${e(x.content)}<small>${e(x.author)} · ${dateTime(x.created_at)}</small></div>`).join("")}<form id="comment-form" data-id="${t.id}"><label>Adicionar comentário<textarea name="content" required maxlength="3000" placeholder="Registre uma atualização para a equipe…"></textarea></label><div class="form-actions"><button class="primary small">Publicar comentário</button></div></form><div class="section-label">ANEXOS</div>${(t.attachments || []).filter(a => !a.evidence).map((a) => `<div class="attachment"><a href="/api/tasks/${t.id}/attachments/${a.id}" download="${e(a.name)}" >${icon("paperclip")} ${e(a.name)}</a><span class="muted tiny">${fmt(Math.ceil(a.size_bytes / 1024))} KB</span>${admin() ? button(icon("x"), "attachment-delete", `data-id="${a.id}" data-task="${t.id}" aria-label="Remover anexo"`, "icon-btn") : ""}</div>`).join("") || '<p class="tiny muted">Nenhum anexo nesta atividade.</p>'}<label>Anexar arquivo · até 5 MB<input class="file-input" type="file" data-task-upload="${t.id}"></label><div class="section-label">HISTÓRICO DE ALTERAÇÕES</div>${historyHTML(t.events || [])}<div class="form-actions">${button("Fechar", "close-dialog")}${admin() ? button(icon("pencil") + "Editar atividade", "task-edit", `data-id="${t.id}"`, "primary") : ""}</div>`,

@@ -408,6 +408,9 @@ export function workspaceDomain(snapshot, actorId) {
         );
       }
       if (name === "tasks" && id && p[3] === "attachments") {
+        if (m === "POST" && String(find()?.assigned_to) === "4") {
+          throw new InputError("Registre a data e o link da publicação na entrega.");
+        }
         const attachment = p[4] && db.attachments.find(item => item.id === p[4] && item.task_id === id);
         if (p[4] && !attachment) return respond({ error: "Anexo não encontrado." }, 404);
         if (m === "GET") {
@@ -828,6 +831,21 @@ export function workspaceDomain(snapshot, actorId) {
         if (data.status === "concluida" && (previous?.status !== "concluida" || b.evidence)) {
           if (!previous || previous.status === "cancelada") throw Error("Abra uma atividade ativa para registrar a evidência.");
           const evidence = b.evidence || {};
+          let publication = {};
+          if (String(owner.id) === "4") {
+            const day = evidence.published_on;
+            const currentDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+            const parsed = typeof day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(day)
+              ? new Date(day + "T12:00:00Z") : null;
+            if (!parsed || !Number.isFinite(+parsed) || parsed.toISOString().slice(0, 10) !== day || day > currentDay) {
+              throw new InputError("Informe uma data válida de publicação até hoje.");
+            }
+            if (typeof evidence.url !== "string" || evidence.url.length > 3000 || !webLink(evidence.url.trim())) {
+              throw new InputError("Informe o link HTTP ou HTTPS da publicação.");
+            }
+            if (evidence.file) throw new InputError("Use o link da publicação como evidência.");
+            publication = { published_on: day };
+          }
           const note = String(evidence.note || "").trim();
           const url = String(evidence.url || "").trim();
           const file = evidence.file;
@@ -838,8 +856,9 @@ export function workspaceDomain(snapshot, actorId) {
             throw Error("O arquivo da evidência deve ter até 1 MB. Para arquivos maiores, use um link.");
           const reportedResult = previous.pay_terms?.bonus_cents ? String(evidence.result || "").trim() : "";
           if (reportedResult.length > 3000) throw Error("O resultado deve ter até 3.000 caracteres.");
-          completion = { note, url, file, result: reportedResult, author: me.name, created_at: now() };
-          data.completed_at = previous.status === "concluida" && previous.completed_at ? previous.completed_at : completion.created_at;
+          completion = { ...publication, note, url, file, result: reportedResult, author: me.name, created_at: now() };
+          data.completed_at = previous.status !== "concluida"
+            ? completion.created_at : previous.completed_at ?? null;
           if (previous.pay_terms && previous.pay_review?.status !== "approved")
             data.pay_review = { status: "pending" };
         } else if (data.status && data.status !== "concluida") {
