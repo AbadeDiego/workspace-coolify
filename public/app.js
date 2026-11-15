@@ -1121,6 +1121,32 @@ function workTaskList(rows, day, mode, showOwner) {
   }).join("")}</${active ? "ol" : "ul"}>`;
 }
 
+function cabraTechReelSummary(tasks) {
+  const reels = tasks.filter(task => /^annike-cabratech-2026-reel-(?:[1-9]|1[0-2])$/.test(String(task.id)))
+    .sort((a, b) => Number(a.id.split("-").at(-1)) - Number(b.id.split("-").at(-1)));
+  if (!reels.length) return "";
+  const delivered = reels.filter(task => task.status === "concluida");
+  const pending = reels.filter(openTask);
+  const summary = `<div class="flex">${badge(delivered.length + " de 12 entregues", "green")}${badge(pending.length + " pendentes")}</div>`;
+  const history = delivered.length ? `<details><summary>Ver entregas concluídas</summary>
+    ${workflowList(delivered.map(task => ({
+      id: task.id, title: task.title, action: "task-detail",
+      note: task.completed_at ? "Concluído em " + dateTime(task.completed_at) : "Data da entrega não informada",
+    })), "")}</details>` : "";
+  return card("Contrato de Reels · CabraTech", summary + history, "12 Reels · início em 15/10/2026");
+}
+
+function upcomingWorkCalendar(tasks) {
+  const events = tasks.map(task => ({
+    id: task.id,
+    title: task.title,
+    date: task.planned_date || task.due_date,
+    action: "task-detail",
+  }));
+  return card("Calendário de próximas entregas", calendar(events),
+    "Selecione uma entrega para abrir a atividade. " + tasks.length + " futuras no total.", calendarControls());
+}
+
 function dailyWork(tasks, team) {
   const now = today();
   const day = state.workDate && state.workDate >= now ? state.workDate : now;
@@ -1135,6 +1161,7 @@ function dailyWork(tasks, team) {
   const owner = String(selectedPerson || state.me.id);
   const visible = showOwner ? tasks : tasks.filter(task => String(task.assigned_to) === owner);
   const { queue, future, unscheduled, blocked, completed } = organizeWorkDay(visible, day);
+  const showDeliveryCalendar = external() || (isManager && owner === "4");
   const late = queue.filter(t => t.due_date && dateOnly(t.due_date) < day);
   state.exports = queue.map((t, i) => ({
     Ordem: i + 1, Atividade: t.title, Responsável: personName(String(t.assigned_to), t.assignee_name),
@@ -1159,7 +1186,8 @@ function dailyWork(tasks, team) {
     </div>` +
     card(day === now ? "Executar hoje" : "Executar em " + human(day), workTaskList(queue, day, "queue", showOwner),
       "Inclui pendências de dias anteriores. Ordem por prioridade, prazo mais próximo e data de execução.") +
-    section("Próximos dias", future, "future") +
+    (showDeliveryCalendar && future.length ? upcomingWorkCalendar(future) : section("Próximos dias", future, "future")) +
+    (showDeliveryCalendar ? cabraTechReelSummary(visible) : "") +
     section("Sem data de execução ou prazo", unscheduled, "unscheduled") +
     section("Aguardando desbloqueio", blocked, "blocked") +
     section("Concluídas no dia", completed, "completed");

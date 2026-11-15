@@ -7,6 +7,8 @@ const migration = await readFile(new URL("../sql/001-initial.sql", import.meta.u
 
 const annikeSchedule = await readFile(new URL("../sql/002-annike-cabratech.sql", import.meta.url), "utf8");
 
+const annikeDeliveries = await readFile(new URL("../sql/003-annike-cabratech-deliveries.sql", import.meta.url), "utf8");
+
 export function databasePool(env = process.env) {
   if (!env.DATABASE_URL && !env.PGPASSWORD) throw new Error("Configure as credenciais do PostgreSQL.");
   const pool = new pg.Pool({
@@ -68,6 +70,7 @@ export async function initialize(pool, env = process.env) {
     const status = await client.query("SELECT sequence FROM workspace_state WHERE singleton FOR UPDATE");
     if (status.rowCount) {
       await client.query(annikeSchedule);
+      await client.query(annikeDeliveries);
       return;
     }
 
@@ -81,6 +84,7 @@ export async function initialize(pool, env = process.env) {
     await writeRows(client, rowsFor(data));
     await client.query("INSERT INTO workspace_state (sequence) VALUES (1000)");
     await client.query(annikeSchedule);
+    await client.query(annikeDeliveries);
   });
 }
 
