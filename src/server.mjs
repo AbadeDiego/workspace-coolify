@@ -25,10 +25,11 @@ function settings(env) {
     throw new Error("APP_ORIGIN deve conter somente o protocolo e o domínio, sem caminho.");
   }
   const local = url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  if (!local && url.protocol !== "https:") throw new Error("Use HTTPS para o domínio do workspace.");
+  const secure = url.protocol === "https:";
+  if (!local && !secure && env.ALLOW_INSECURE_HTTP !== "true") throw new Error("Use HTTPS para o domínio do workspace.");
   const port = Number(env.PORT || 3000);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("PORT inválida.");
-  return { origin: url.origin, port, secure: !local, cookie: local ? "workspace_session" : "__Host-workspace_session" };
+  return { origin: url.origin, port, secure, cookie: secure ? "__Host-workspace_session" : "workspace_session" };
 }
 
 function cookie(config, token, age) {

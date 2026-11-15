@@ -5,6 +5,7 @@ services:
     init: true
     restart: unless-stopped
     environment:
+      ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-false}
       APP_ORIGIN: ${APP_ORIGIN:?}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
