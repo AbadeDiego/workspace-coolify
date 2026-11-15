@@ -5,6 +5,8 @@ import { hashPassword, normalizeEmail, validEmail, validPassword } from "./passw
 const seed = JSON.parse(await readFile(new URL("./seed.json", import.meta.url), "utf8"));
 const migration = await readFile(new URL("../sql/001-initial.sql", import.meta.url), "utf8");
 
+const annikeSchedule = await readFile(new URL("../sql/002-annike-cabratech.sql", import.meta.url), "utf8");
+
 export function databasePool(env = process.env) {
   if (!env.DATABASE_URL && !env.PGPASSWORD) throw new Error("Configure as credenciais do PostgreSQL.");
   const pool = new pg.Pool({
@@ -63,8 +65,11 @@ export async function initialize(pool, env = process.env) {
   await transaction(pool, async client => {
     await client.query("SELECT pg_advisory_xact_lock(64720261113)");
     await client.query(migration);
-    const status = await client.query("SELECT sequence FROM workspace_state WHERE singleton");
-    if (status.rowCount) return;
+    const status = await client.query("SELECT sequence FROM workspace_state WHERE singleton FOR UPDATE");
+    if (status.rowCount) {
+      await client.query(annikeSchedule);
+      return;
+    }
 
     const email = normalizeEmail(env.ADMIN_EMAIL);
     if (!validEmail(email) || !validPassword(env.ADMIN_PASSWORD)) {
@@ -75,6 +80,7 @@ export async function initialize(pool, env = process.env) {
     data.credentials.push({ user_id: "1", ...await hashPassword(env.ADMIN_PASSWORD) });
     await writeRows(client, rowsFor(data));
     await client.query("INSERT INTO workspace_state (sequence) VALUES (1000)");
+    await client.query(annikeSchedule);
   });
 }
 
