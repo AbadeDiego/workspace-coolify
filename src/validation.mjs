@@ -11,7 +11,7 @@ const collections = {
   startups: "",
   "follower-readings": "startup_id assigned_to account followers evidence_url",
   users: "name email role active job_title responsibilities avatar_url password",
-  tasks: "startup_id product_id assigned_to title description priority status planned_date due_date checklist evidence pay_base pay_bonus pay_quality pay_result",
+  tasks: "startup_id product_id assigned_to title description priority status planned_date due_date checklist evidence work_started_at work_ended_at pay_base pay_bonus pay_quality pay_result",
   leads: "startup_id owner_id name company phone email city segment origin campaign_name public_body stakeholders documents_due documents_notes estimated_value next_contact_at meeting_at notes stage proposal",
   deals: "lead_id title value installments first_due_date",
   finance: "startup_id entry_type description amount expense_class status category cost_center entry_date due_date competence_date",
@@ -21,15 +21,17 @@ const collections = {
   technology: "startup_id kind title responsible priority status due_date progress version notes",
   templates: "title sector startup_id steps",
   plans: "template_id startup_id owner_id title due_date",
-  "material-products": "name stage description",
+  "material-experiments": "product_id user_id title objective hypothesis materials procedure success_criteria",
+  "material-worklogs": "product_id user_id task_id experiment_id work_started_at work_ended_at note",
+  "material-products": "name stage description trl trl_reason trl_evidence_url",
   "material-goals": "product_id user_id title target unit start_date end_date",
-  "material-results": "product_id user_id goal_id task_id occurred_on title quantity method outcome next_steps evidence",
+  "material-results": "product_id user_id goal_id task_id occurred_on experiment_id title quantity method outcome next_steps evidence",
 };
 
 const readOnly = new Set(["me", "bootstrap", "task-payments", "campaign-results",
   "campaign-options", "finance-context", "reports", "history", "customers", "invoices"]);
 const canPatch = new Set(["users", "tasks", "leads", "finance", "goals", "marketing",
-  "technology", "templates", "material-products", "material-goals"]);
+  "technology", "templates", "material-products", "material-goals", "material-experiments"]);
 const canDelete = new Set(["tasks", "leads", "finance", "marketing", "technology"]);
 
 export function validateRoute(parts, method) {
@@ -49,7 +51,7 @@ export function validateRoute(parts, method) {
   if (name === "memberships") return !id && ["GET", "PUT"].includes(method);
   if (readOnly.has(name)) return !id && method === "GET";
   if (!Object.hasOwn(collections, name)) return false;
-  if (method === "GET") return !id || ["tasks", "material-products", "material-goals", "material-results"].includes(name);
+  if (method === "GET") return !id || ["tasks", "material-products", "material-goals", "material-results", "material-experiments"].includes(name);
   if (method === "POST") return !id && name !== "startups";
   if (method === "PATCH") return Boolean(id) && canPatch.has(name);
   if (method === "DELETE") return Boolean(id) && canDelete.has(name);

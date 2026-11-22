@@ -1,3 +1,4 @@
+import { materialCollections, developmentRoute, updateReadiness, workInterval, assertNoOverlap } from "./material-development.mjs";
 import { recordFollowers, scheduleReposts } from "./social-media.mjs";
 import { hashPassword, normalizeEmail, validEmail } from "./password.mjs";
 import { validateRoute, validateWrite, InputError, attachmentBytes } from "./validation.mjs";
@@ -111,6 +112,15 @@ export function workspaceDomain(snapshot, actorId) {
         (!filter || !x.startup_id || x.startup_id === filter) && canSee(collection, x));
       const find = () => db[table]?.find(x => String(x.id) === String(id));
       const canManagePay = isAdmin && me.id === "1";
+      if (materialCollections.includes(name)) {
+        if (!(isAdmin || me.role === "desenvolvimento") || !allowsStartup(MATERIAL_SPACE)) {
+          return respond({error:"Área de materiais indisponível."},403);
+        }
+        validateWrite(name, undefined, m, b);
+        if (filter && filter !== MATERIAL_SPACE) return respond([]);
+        const result = developmentRoute({name,id,method:m,body:b,db,me,add,now});
+        return respond(result.data,result.status);
+      }
       // Product records are independent from marketing and the commercial funnel.
       if (["material-products", "material-goals", "material-results"].includes(name)) {
         if (!(isAdmin || me.role === "desenvolvimento") || !allowsStartup(MATERIAL_SPACE))
@@ -139,11 +149,11 @@ export function workspaceDomain(snapshot, actorId) {
         if(name==='material-products'){
           const title=required(b.name??old?.name,'o nome do produto',120);
           if(products.some(x=>x.id!==old?.id&&x.name.toLocaleLowerCase('pt-BR')===title.toLocaleLowerCase('pt-BR')))throw Error('Já existe um produto com esse nome.');
-          const stage=b.stage||old?.stage||'pesquisa';
-          if(!['pesquisa','prototipo','testes','validacao','finalizado'].includes(stage))throw Error('Selecione uma etapa válida.');
+          const stage=b.stage||old?.stage||'ideacao';
+          if(!['ideacao','pesquisa','prototipo','testes','validacao','finalizado'].includes(stage))throw Error('Selecione uma etapa válida.');
           const description=String(b.description??old?.description??'').trim();
           if(description.length>3000)throw Error('Use até 3.000 caracteres na descrição.');
-          data={name:title,stage,description,startup_id:MATERIAL_SPACE};
+          data={name:title,stage,description,startup_id:MATERIAL_SPACE,...updateReadiness(old,b,me,now())};
         }else{
           const product=productFor(b.product_id||old?.product_id);
           if(!product)throw Error('Selecione o produto.');
@@ -175,12 +185,14 @@ export function workspaceDomain(snapshot, actorId) {
             if(goal&&(!Number.isFinite(quantity)||quantity<=0))throw Error('Informe uma quantidade realizada maior que zero.');
             const task=b.task_id?tasks.find(t=>t.id===String(b.task_id)):null;
             if(b.task_id&&(!task||task.product_id!==product.id||task.assigned_to!==userId))throw Error('A atividade deve ser da mesma pessoa e produto.');
+            const experiment=b.experiment_id?db['material-experiments'].find(x=>x.id===String(b.experiment_id)&&x.product_id===product.id):null;
+            if(b.experiment_id&&!experiment)throw Error('Selecione um roteiro do mesmo material.');
             const evidence=b.evidence||{},note=String(evidence.note||'').trim(),url=String(evidence.url||'').trim(),file=evidence.file;
             if(!note&&!url&&!file?.data)throw Error('Anexe uma evidência em texto, link ou arquivo.');
             if(note.length>3000)throw Error('A evidência deve ter até 3.000 caracteres.');
             if(url&&!webLink(url))throw Error('Use um link HTTP ou HTTPS para a evidência.');
             if(file&&(!file.name||!file.data||file.data.length>1398104||atob(file.data).length>1048576))throw Error('O arquivo deve ter até 1 MB. Para arquivos maiores, use um link.');
-            data={title:required(b.title,'o título do resultado',200),outcome:required(b.outcome,'o resultado observado'),
+            data={experiment_id:experiment?.id||'',protocol_snapshot:experiment?{id:experiment.id,title:experiment.title,version:experiment.version,objective:experiment.objective,hypothesis:experiment.hypothesis,materials:experiment.materials,procedure:experiment.procedure,success_criteria:experiment.success_criteria}:null,title:required(b.title,'o título do resultado',200),outcome:required(b.outcome,'o resultado observado'),
               method:String(b.method||'').slice(0,3000),next_steps:String(b.next_steps||'').slice(0,3000),
               product_id:product.id,user_id:userId,goal_id:goal?.id||'',task_id:task?.id||'',quantity,unit:goal?.unit||'',
               occurred_on:occurred,evidence:{note,url,...(file?{file:{name:String(file.name).slice(0,200),data:file.data}}:{})},
@@ -304,7 +316,7 @@ export function workspaceDomain(snapshot, actorId) {
         const allowedWrite = (isSales && ["leads", "deals"].includes(name) && m !== "DELETE")
           || (name === "marketing" && (isSocial || isExternal) && m !== "DELETE")
           || (name === "tasks" && !id && m === "POST" && Object.keys(b).every(k =>
-            ["startup_id", "product_id", "title", "description", "priority", "planned_date", "due_date", "checklist"].includes(k)))
+            ["startup_id", "product_id", "title", "description", "priority", "planned_date", "due_date", "checklist", "work_started_at", "work_ended_at"].includes(k)))
           || (name === "tasks" && id && find() && (p[3] === "comments" || (p[3] === "attachments" && m === "POST")
             || (!p[3] && m === "PATCH" && Object.keys(b).every(k => ["status", "checklist", "evidence"].includes(k)))))
           || (name === "activities" && m === "POST" && String(b.user_id || me.id) === me.id);
@@ -527,6 +539,7 @@ export function workspaceDomain(snapshot, actorId) {
         return respond(rows.map((x) => decorate(name, x)));
       }
       if (m === "DELETE") {
+        if(name==='tasks'&&(existing?.work_started_at||db['material-worklogs'].some(r=>r.task_id===id)))throw new InputError('Esta atividade possui horas registradas.');
         if(name==='tasks'&&db['material-results'].some(r=>r.task_id===id))throw Error('Esta atividade está vinculada a resultados de desenvolvimento e deve ser preservada.');
         if (name === "tasks" && (db.taskPayments.some(x => x.task_id === id) || (find()?.pay_terms && find()?.evidence_log?.length)))
           throw Error("A atividade remunerada integra o histórico de entregas.");
@@ -765,6 +778,9 @@ export function workspaceDomain(snapshot, actorId) {
 
       if (name === "technology" && data.status === "concluido")
         data.delivered_at = now();
+      if(name==='tasks'&&existing&&(existing.work_started_at||db['material-worklogs'].some(r=>r.task_id===existing.id))){
+        if(m==='DELETE'||['startup_id','assigned_to','product_id'].some(k=>data[k]&&data[k]!==existing[k]))throw new InputError('Preserve o material e a pessoa da atividade com horas registradas.');
+      }
       let completion;
       if (name === "tasks") {
         const previous = find();
@@ -786,6 +802,16 @@ export function workspaceDomain(snapshot, actorId) {
         const owner = users.find(user => user.id === (data.assigned_to || previous?.assigned_to));
         if (!owner || (owner.role !== "admin" && !belongsTo(owner.id, startupId))) {
           throw new InputError("Selecione um responsável vinculado à startup.");
+        }
+        const hasWork = b.work_started_at || b.work_ended_at;
+        delete data.work_started_at;
+        delete data.work_ended_at;
+        if (hasWork) {
+          if (previous) throw new InputError("Registre novos períodos em Horas de trabalho.");
+          if (startupId !== MATERIAL_SPACE || !data.product_id) throw new InputError("Selecione uma atividade de desenvolvimento de material.");
+          const interval = workInterval(b.work_started_at, b.work_ended_at);
+          assertNoOverlap(db, owner.id, interval);
+          Object.assign(data, interval);
         }
         delete data.pay_terms;
         delete data.pay_review;

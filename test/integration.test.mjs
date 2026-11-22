@@ -65,7 +65,7 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal(seed.users.filter(user => user.active).length, 1);
   assert.equal((await read("leads", diego)).length, 93);
   assert.equal((await read("finance", diego)).length, 0);
-  assert.equal((await read("tasks", diego)).length, 0);
+  assert.equal((await read("tasks", diego)).length, 12);
   assert.equal((await read("material-products", diego)).length, 3);
   assert.equal((await read("templates", diego)).length > 0, true);
 
@@ -123,6 +123,15 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   await post("material-results", {product_id:product.id,goal_id:materialGoal.id,title:"Ensaio",outcome:"Observação técnica",occurred_on:date,quantity:1,evidence:{note:"Relatório do ensaio"}},vanessa);
   assert.equal((await read("material-goals",vanessa))[0].done,1);
 
+  const experiment = await post("material-experiments", {
+    product_id:product.id,title:"Teste de formulação",objective:"Avaliar absorção",materials:"Palma e água",
+    procedure:"Preparar e medir",success_criteria:"Volume previsto",
+  },vanessa);
+  await patch("material-products/"+product.id,{trl:"2",trl_reason:"Conceito definido"},vanessa);
+  await post("material-results",{product_id:product.id,experiment_id:experiment.id,title:"Ensaio com roteiro",outcome:"Medida registrada",occurred_on:date,evidence:{note:"Relatório"}},vanessa);
+  await patch("material-experiments/"+experiment.id,{procedure:"Procedimento revisado"},vanessa);
+  const workTask=await post("tasks",{startup_id:"materials-palma",product_id:product.id,title:"Preparar formulação",work_started_at:"2025-11-21T08:00:00-03:00",work_ended_at:"2025-11-21T09:30:00-03:00"},vanessa);
+  await post("material-worklogs",{product_id:product.id,task_id:workTask.id,experiment_id:experiment.id,note:"Análise",work_started_at:"2025-11-21T10:00:00-03:00",work_ended_at:"2025-11-21T10:45:00-03:00"},vanessa);
   const piece = await post("marketing",{startup_id:startup,creator_id:"3",title:"Vídeo",format:"video"},diego);
   await post("marketing/"+piece.id+"/workflow",{action:"submit",url:"https://example.test/video"},larissa,200);
   await post("marketing/"+piece.id+"/workflow",{action:"approve"},diego,200);
@@ -176,6 +185,11 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal((await read("task-payments",eduarda)).entries.length,1);
   assert.equal((await read("follower-readings",larissa)).length,6);
   assert.equal((await read("tasks",larissa)).filter(task => task.source === "story_repost").length,2);
+  assert.equal((await read("material-products/"+product.id,vanessa)).trl_history.length,1);
+  assert.equal((await read("material-experiments/"+experiment.id,vanessa)).version,2);
+  assert.equal((await read("material-results",vanessa)).find(r=>r.experiment_id===experiment.id).protocol_snapshot.version,1);
+  assert.equal((await read("material-worklogs",vanessa))[0].work_minutes,45);
+  assert.equal((await read("tasks/"+workTask.id,vanessa)).work_minutes,90);
   await patch("users/2",{password:randomBytes(20).toString("hex")},diego);
   await api("me","GET",undefined,eduarda,401);
   await req("/api/auth/logout","POST",undefined,diego);

@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { hashPassword, normalizeEmail, validEmail, validPassword } from "./password.mjs";
 
-const seed = JSON.parse(await readFile(new URL("./seed.json", import.meta.url), "utf8"));
+const seed = {
+  ...JSON.parse(await readFile(new URL("./seed.json", import.meta.url), "utf8")),
+  "material-experiments": [],
+  "material-worklogs": [],
+};
 const migration = await readFile(new URL("../sql/001-initial.sql", import.meta.url), "utf8");
 
 const annikeSchedule = await readFile(new URL("../sql/002-annike-cabratech.sql", import.meta.url), "utf8");

@@ -53,3 +53,11 @@ TEST_DATABASE_URL=postgres://USUARIO:SENHA@HOST:5432/postgres npm test
 ```
 
 Use um servidor de teste. A suíte cria e remove um banco temporário e verifica os cinco perfis, escopos de acesso, os 93 leads, anexos, aprovação de entregas, propostas, pagamentos concorrentes e continuidade após reiniciar a aplicação.
+
+## Desenvolvimento de materiais
+
+Em **Desenvolvimento de materiais**, novos produtos começam em **Ideação**. Ao abrir um material, registre o TRL avaliado, a justificativa e, quando disponível, o link de referência. O histórico mostra cada mudança de nível com data e autor. Materiais já cadastrados mantêm a etapa informada e ficam com TRL a avaliar até o primeiro registro.
+
+Em **Experimentos**, crie os roteiros com objetivo, hipótese, materiais e quantidades, procedimento e critérios de avaliação. Cada revisão gera uma versão. Ao registrar um resultado, escolha o roteiro utilizado. O resultado guarda uma cópia daquela versão, mesmo após revisões posteriores.
+
+Ao criar uma atividade do material, os campos opcionais **Início do trabalho** e **Fim do trabalho** registram uma atuação já realizada. Para novos períodos na mesma atividade, use **Horas de trabalho → Registrar período**. Registre separadamente preparação, execução acompanhada e análise. Intervalos de espera do experimento ficam fora desses períodos. O sistema soma o tempo dedicado por pessoa e material e rejeita horários sobrepostos da mesma pessoa.

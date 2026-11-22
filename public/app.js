@@ -2349,8 +2349,106 @@ async function peoplePage() {
   );
 }
 // Product development shares the task queue and evidence workflow with the workspace.
-const materialStages=[['pesquisa','Pesquisa'],['prototipo','Prototipagem'],['testes','Testes'],['validacao','Validação'],['finalizado','Finalizado']];
-const materialTabs=[['overview','Visão geral'],['goals','Metas'],['tasks','Atividades'],['results','Resultados e evidências']];
+// Included inside the workspace scope; shares product filters and modal controls.
+const trlLevels = [
+  [1,"Princípios básicos observados"],[2,"Conceito formulado"],[3,"Prova de conceito"],
+  [4,"Validação em laboratório"],[5,"Validação em ambiente relevante"],
+  [6,"Demonstração em ambiente relevante"],[7,"Protótipo em ambiente operacional"],
+  [8,"Sistema completo e qualificado"],[9,"Tecnologia comprovada em operação"],
+];
+const trlLabel = product => product.trl ? "TRL " + product.trl : "TRL a avaliar";
+const workDuration = minutes => Math.floor(Number(minutes)/60) + "h " + String(Number(minutes)%60).padStart(2,"0") + "min";
+function workFields(value = {}, required = false) {
+  return '<p class="tiny muted full">Registre cada período de atuação da pessoa em preparação, execução ou análise.</p>' +
+    sf("Início do trabalho", "work_started_at", localDatetime(value.work_started_at), "datetime-local", required ? "required" : "") +
+    sf("Fim do trabalho", "work_ended_at", localDatetime(value.work_ended_at), "datetime-local", required ? "required" : "");
+}
+function normalizeWork(body) {
+  for (const key of ["work_started_at","work_ended_at"]) {
+    if (body[key]) body[key] = new Date(body[key]).toISOString();
+    else delete body[key];
+  }
+}
+function readinessPanel(product) {
+  const history = (product.trl_history || []).slice().reverse();
+  return card("Maturidade tecnológica", `<div class="between"><strong>${e(trlLabel(product))}</strong>
+    ${button("Registrar avaliação TRL","material-trl",itemRef(product.id),"small primary")}</div>
+    <ol class="trl-scale" aria-label="Escala TRL">${trlLevels.map(([level,label])=>
+      `<li class="${level===product.trl?'current':''}"><b>${level}</b><span>${e(label)}</span></li>`).join("")}</ol>` +
+    (history.length ? table(history,[
+      {title:"Data",render:h=>dateTime(h.recorded_at)},
+      {title:"Evolução",render:h=>`${h.from?'TRL '+h.from:'Avaliação inicial'} → TRL ${h.to}`},
+      {title:"Justificativa",key:"reason"},{title:"Responsável",key:"author"},
+      {title:"Referência",render:h=>externalLink(h.evidence_url,"Abrir referência")},
+    ],"trl-history",false,false) : '<p class="tiny muted">Registre a primeira avaliação do material.</p>'),
+    "O nível é registrado com justificativa e referência técnica.");
+}
+async function trlForm(id) {
+  const product=await api("/api/material-products/"+id);
+  formModal("Avaliar TRL · "+product.name,
+    sel("TRL avaliado","trl",trlLevels.map(([n,label])=>[String(n),n+" · "+label]),product.trl||"1")+
+    text("Justificativa e resultados que sustentam o nível","trl_reason","","required maxlength=\"3000\"")+
+    sf("Link do relatório ou resultado (opcional)","trl_evidence_url","","url"),
+    body=>api("/api/material-products/"+id,"PATCH",body),{submit:"Salvar avaliação"});
+}
+async function experimentForm(id) {
+  const products=await api("/api/material-products");
+  const old=id?await api("/api/material-experiments/"+id):null;
+  const v=old||{product_id:state.materialProduct||products[0]?.id};
+  formModal(old?"Revisar roteiro":"Novo roteiro de experimento",
+    sel("Material","product_id",products.map(p=>[p.id,p.name]),v.product_id,old?"disabled":"required")+
+    sf("Nome do experimento","title",v.title,"text",'required maxlength="200"')+
+    text("Objetivo","objective",v.objective,'required maxlength="3000"')+
+    text("Hipótese (opcional)","hypothesis",v.hypothesis,'maxlength="3000"')+
+    text("Materiais, formulação e quantidades","materials",v.materials,'required maxlength="3000"')+
+    text("Procedimento passo a passo","procedure",v.procedure,'required maxlength="3000"')+
+    text("Critérios de avaliação","success_criteria",v.success_criteria,'required maxlength="3000"'),
+    body=>api("/api/material-experiments"+(id?"/"+id:""),id?"PATCH":"POST",body),
+    {submit:old?"Salvar nova versão":"Salvar roteiro"});
+}
+async function experimentDetail(id) {
+  const experiment=await api("/api/material-experiments/"+id);
+  dialog(experiment.title,
+    `<div class="detail-summary">${badge(experiment.product_name,"blue")}${badge("Versão "+experiment.version)}</div>`+
+    ["objective","hypothesis","materials","procedure","success_criteria"].map((key,index)=>
+      experiment[key]?`<div class="workflow-item"><b>${["Objetivo","Hipótese","Materiais e quantidades","Procedimento","Critérios de avaliação"][index]}</b><p class="lead-notes">${e(experiment[key])}</p></div>`:"").join("")+
+    `<div class="workflow-actions">${button("Registrar resultado","material-experiment-result",itemRef(id),"primary")}
+    ${admin()||experiment.user_id===state.me.id?button("Revisar roteiro","material-experiment-edit",itemRef(id)):""}</div>
+    <details><summary>Versões anteriores</summary>${(experiment.revisions||[]).slice(0,-1).reverse().map(r=>
+      `<div class="workflow-item"><b>Versão ${r.version} · ${e(r.author)}</b><small> ${dateTime(r.recorded_at)}</small>
+       ${["objective","hypothesis","materials","procedure","success_criteria"].map(k=>`<p class="lead-notes">${e(r[k])}</p>`).join("")}</div>`).join("")||'<p>Nenhuma versão anterior.</p>'}</details>`);
+}
+let workLogOptions={tasks:[],experiments:[]};
+function syncWorkTasks() {
+  const product=$("#worklog-product").value;
+  const user=$("#worklog-user")?.value||state.me.id;
+  const task=$("#worklog-task"),experiment=$("#worklog-experiment");
+  task.innerHTML=options([["","Selecione a atividade"],...workLogOptions.tasks.filter(t=>
+    t.product_id===product&&t.assigned_to===user).map(t=>[t.id,t.title])],task.value);
+  experiment.innerHTML=options([["","Sem roteiro vinculado"],...workLogOptions.experiments.filter(x=>
+    x.product_id===product).map(x=>[x.id,x.title])],experiment.value);
+}
+async function workLogForm() {
+  const [products,tasks,experiments]=await Promise.all(["material-products","tasks","material-experiments"].map(n=>api("/api/"+n)));
+  workLogOptions={tasks,experiments};
+  formModal("Registrar trabalho de desenvolvimento",
+    sel("Material","product_id",products.map(p=>[p.id,p.name]),state.materialProduct||products[0]?.id,'required id="worklog-product"')+
+    (admin()?sel("Pessoa","user_id",state.users.filter(u=>u.active&&u.role==="desenvolvimento").map(u=>[u.id,u.name]),materialPerson(),'required id="worklog-user"'):"")+
+    sel("Atividade","task_id",[],"",'required id="worklog-task"')+
+    sel("Roteiro (opcional)","experiment_id",[],"",'id="worklog-experiment"')+
+    workFields({},true)+text("Trabalho realizado","note","","required maxlength=\"3000\""),
+    body=>{normalizeWork(body);return api("/api/material-worklogs","POST",body);},{submit:"Salvar período"});
+  syncWorkTasks();
+}
+function workLogRows(tasks,logs) {
+  return [...tasks.filter(t=>t.work_started_at).map(t=>({
+    ...t,task_title:t.title,user_id:t.assigned_to,person_name:t.assignee_name,
+    note:"Período registrado na criação da atividade",
+  })),...logs].sort((a,b)=>b.work_started_at.localeCompare(a.work_started_at));
+}
+
+const materialStages=[['ideacao','Ideação'],['pesquisa','Pesquisa'],['prototipo','Prototipagem'],['testes','Testes'],['validacao','Validação'],['finalizado','Finalizado']];
+const materialTabs=[['overview','Visão geral'],['goals','Metas'],['tasks','Atividades'],['experiments','Experimentos'],['work','Horas de trabalho'],['results','Resultados e evidências']];
 const materialPerson=()=>state.users.find(x=>x.active&&x.role==='desenvolvimento')?.id||state.me.id;
 const materialName=id=>(state.data['material-products']||[]).find(x=>x.id===id)?.name||'Produto';
 function materialTaskField(products,value,startup){
@@ -2362,27 +2460,42 @@ function materialMetric(title,value,tab,iconName){
 }
 async function materialsPage(requestedTab){
   const tab=typeof requestedTab==='string'?requestedTab:(state.materialTab||'overview');
-  const [products,allGoals,allResults,allTasks]=await Promise.all([load('material-products'),load('material-goals'),load('material-results'),load('tasks')]);
+  const [products,allGoals,allResults,allTasks,allExperiments,allWorklogs]=await Promise.all([load('material-products'),load('material-goals'),load('material-results'),load('tasks'),load('material-experiments'),load('material-worklogs')]);
   const product=products.find(x=>x.id===state.materialProduct),selected=product?.id||'';
   const own=x=>!selected||x.product_id===selected;
   const tasks=allTasks.filter(x=>x.product_id&&own(x)),goals=allGoals.filter(own),results=allResults.filter(own);
+  const experiments=allExperiments.filter(own),worklogs=workLogRows(tasks,allWorklogs.filter(own));
   const done=tasks.filter(x=>x.status==='concluida').length,open=tasks.filter(openTask).length;
-  const header=intro('Desenvolvimento de materiais', 'Produtos de palma com metas, atividades e registros de desenvolvimento em espaços separados.',
+  const header=intro('Desenvolvimento de materiais', 'Da ideação aos experimentos, resultados e evolução tecnológica.',
     button(icon('plus')+'Novo produto','material-new-product','','primary'));
   if(state.startup&&state.startup!==MATERIAL_SPACE)return header+card('Seleção de projeto',empty('Selecione Materiais de Palma','Esta área reúne o desenvolvimento dos produtos de palma.','flask-conical')+button('Abrir Materiais de Palma','material-scope','','primary'));
   const controls=`<div class="material-controls">${sel('Produto','material-product',[['','Todos os produtos'],...products.map(x=>[x.id,x.name])],selected,'id="material-product"')}${button('Meu dia '+icon('arrow-up-right'),'navigate','data-value="myday"','small')}</div>
     <nav class="material-tabs" aria-label="Seções de desenvolvimento">${materialTabs.map(([key,name])=>button(e(name),'material-tab',`data-value="${key}" ${tab===key?'aria-current="page"':''}`,tab===key?'active':'')).join('')}</nav>`;
-  const context=product?`<div class="material-context"><div><span class="eyebrow">PRODUTO SELECIONADO</span><h2>${e(product.name)}</h2><p>${e(product.description||'Registre o objetivo e as características deste produto.')}</p></div><div class="actions">${badge(materialStages.find(([key])=>key===product.stage)?.[1]||'Pesquisa',product.stage==='finalizado'?'ok':'blue')}${button('Editar produto','material-edit-product',itemRef(product.id),'small')}</div></div>`:'';
+  const context=product?`<div class="material-context"><div><span class="eyebrow">PRODUTO SELECIONADO</span><h2>${e(product.name)}</h2><p>${e(product.description||'Registre o objetivo e as características deste produto.')}</p></div><div class="actions">${badge(materialStages.find(([key])=>key===product.stage)?.[1]||'Pesquisa',product.stage==='finalizado'?'ok':'blue')}${button('Editar produto','material-edit-product',itemRef(product.id),'small')}</div></div>${readinessPanel(product)}`:'';
   let body='';
   if(tab==='overview'){
     body=`<div class="kpis">${materialMetric('Atividades em aberto',open,'tasks','list-todo')}${materialMetric('Atividades concluídas',done,'tasks','circle-check')}${materialMetric('Metas atingidas',goals.filter(x=>x.done>=x.target).length,'goals','target')}${materialMetric('Resultados registrados',results.length,'results','flask-conical')}</div>`;
     body+=`<div class="grid3 material-products">${products.filter(x=>!selected||x.id===selected).map(p=>{
       const ts=allTasks.filter(t=>t.product_id===p.id&&t.status!=='cancelada'),gs=allGoals.filter(g=>g.product_id===p.id),rs=allResults.filter(r=>r.product_id===p.id),completed=ts.filter(t=>t.status==='concluida').length;
-      return `<section class="card material-product-card"><div class="between"><span class="material-symbol">${icon('flask-conical')}</span>${badge(materialStages.find(([key])=>key===p.stage)?.[1]||'Pesquisa',p.stage==='finalizado'?'ok':'blue')}</div><h2>${e(p.name)}</h2><p class="muted">${e(p.description||'Espaço dedicado a este produto, do planejamento aos resultados.')}</p><div class="between tiny"><span>Atividades concluídas</span><b>${completed} / ${ts.length}</b></div>${progress(completed,ts.length)}<p class="tiny muted">${gs.length} metas · ${rs.length} resultados registrados</p><div class="workflow-actions">${button('Abrir produto '+icon('arrow-up-right'),'material-open',itemRef(p.id),'small primary')}${button('Editar','material-edit-product',itemRef(p.id),'small')}</div></section>`;
+      return `<section class="card material-product-card"><div class="between"><span class="material-symbol">${icon('flask-conical')}</span>${badge(materialStages.find(([key])=>key===p.stage)?.[1]||'Pesquisa',p.stage==='finalizado'?'ok':'blue')}</div><h2>${e(p.name)}</h2><b>${e(trlLabel(p))}</b><p class="muted">${e(p.description||'Espaço dedicado a este produto, do planejamento aos resultados.')}</p><div class="between tiny"><span>Atividades concluídas</span><b>${completed} / ${ts.length}</b></div>${progress(completed,ts.length)}<p class="tiny muted">${gs.length} metas · ${rs.length} resultados registrados</p><div class="workflow-actions">${button('Abrir produto '+icon('arrow-up-right'),'material-open',itemRef(p.id),'small primary')}${button('Editar','material-edit-product',itemRef(p.id),'small')}</div></section>`;
     }).join('')||empty('Nenhum produto cadastrado','Crie o primeiro produto para organizar seu desenvolvimento.')}</div>`;
     const queue=tasks.filter(openTask).sort(compareWorkTasks);
     body+=card('Próximas atividades',workflowList(queue.map(t=>({id:t.id,title:t.title,action:'task-detail',note:[t.product_name,label(t.priority),human(t.due_date),label(t.status)].join(' · ')})),'Nenhuma atividade pendente'), 'Prioridade, prazo e data de execução. A etapa do produto é atualizada separadamente das atividades.',button('Nova atividade','material-new-task','','small'));
     state.exports=products.filter(p=>!selected||p.id===selected).map(p=>({Produto:p.name,Etapa:materialStages.find(([k])=>k===p.stage)?.[1]}));
+  }else if(tab==='experiments'){
+    body=card("Roteiros de experimentos",table(experiments,[
+      {title:"Experimento",key:"title",render:x=>button(e(x.title),"material-experiment-detail",itemRef(x.id),"text-link")},
+      {title:"Material",key:"product_name"},{title:"Versão",key:"version"},{title:"Autor",key:"person_name"},
+    ],"material-experiments"),"Roteiros e versões usados nos ensaios.",button("Novo roteiro","material-experiment-new","","primary"));
+  }else if(tab==='work'){
+    const total=worklogs.reduce((n,r)=>n+Number(r.work_minutes||0),0);
+    body=card("Trabalho de desenvolvimento",table(worklogs,[
+      {title:"Material",key:"product_name"},{title:"Atividade",key:"task_title"},{title:"Pessoa",key:"person_name"},
+      {title:"Início do trabalho",render:r=>dateTime(r.work_started_at)},
+      {title:"Fim do trabalho",render:r=>dateTime(r.work_ended_at)},
+      {title:"Tempo dedicado",render:r=>workDuration(r.work_minutes)},
+      {title:"Trabalho realizado",key:"note"},
+    ],"material-worklogs"),"Total dedicado · "+workDuration(total),button("Registrar período","material-work-new","","primary"));
   }else if(tab==='goals'){
     body=`<div class="toolbar"><p class="muted tiny">As metas são definidas pela Gestão. O progresso soma os resultados vinculados à mesma pessoa, produto e período.</p>${admin()?button(icon('plus')+'Nova meta','material-new-goal','','primary'):''}</div><div class="grid3 material-goals">${goals.map(g=>`<section class="card goal-card"><div class="between">${badge(g.product_name,'blue')}${badge(g.done>=g.target?'Atingida':today()>g.end_date?'Prazo encerrado':'Em andamento',g.done>=g.target?'ok':today()>g.end_date?'warn':'blue')}</div><h2>${e(g.title)}</h2><p class="goal-value"><strong>${fmt(g.done)}</strong> de ${fmt(g.target)} ${e(g.unit)}</p>${progress(g.done,g.target)}<p class="tiny muted">${e(g.person_name)} · ${human(g.start_date)} a ${human(g.end_date)}</p><div class="workflow-actions">${button('Registrar resultado','material-new-result',`data-product="${e(g.product_id)}" data-goal="${e(g.id)}"`,'small primary')}${admin()?button('Editar meta','material-edit-goal',itemRef(g.id),'small'):''}</div></section>`).join('')||empty('Nenhuma meta definida','A Gestão pode cadastrar uma meta para cada produto e período.','target')}</div>`;
     state.exports=goals.map(g=>({Produto:g.product_name,Meta:g.title,Pessoa:g.person_name,Realizado:g.done,Alvo:g.target,Unidade:g.unit,Início:g.start_date,Prazo:g.end_date}));
@@ -2416,7 +2529,7 @@ async function materialsPage(requestedTab){
   return header+controls+context+body;
 }
 async function materialProductForm(id){
-  const old=id?await api('/api/material-products/'+id):null,v=old||{stage:'pesquisa'};
+  const old=id?await api('/api/material-products/'+id):null,v=old||{stage:'ideacao'};
   formModal(old?'Editar produto':'Novo produto',sf('Nome do produto','name',v.name,'text','required maxlength="120"')+
     sel('Etapa de desenvolvimento','stage',materialStages,v.stage)+text('Objetivo e características','description',v.description,'maxlength="3000"'),
     b=>api('/api/material-products'+(id?'/'+id:''),id?'PATCH':'POST',b),{submit:old?'Salvar produto':'Criar produto'});
@@ -2437,15 +2550,18 @@ function syncMaterialResultOptions(){
   const goal=$('#material-result-goal'),task=$('#material-result-task');
   if(goal){goal.innerHTML=options([['','Sem meta vinculada'],...materialResultOptions.goals.filter(g=>g.product_id===product&&g.user_id===user).map(g=>[g.id,g.title+' · '+g.unit])],goal.value)}
   if(task){task.innerHTML=options([['','Sem atividade vinculada'],...materialResultOptions.tasks.filter(t=>t.product_id===product&&t.assigned_to===user).map(t=>[t.id,t.title])],task.value)}
+  const experiment=$('#material-result-experiment');
+  if(experiment)experiment.innerHTML=options([['','Sem roteiro vinculado'],...(materialResultOptions.experiments||[]).filter(x=>x.product_id===product).map(x=>[x.id,x.title+' · v'+x.version])],experiment.value);
   const quantity=$('#material-result-quantity');if(quantity){quantity.value='';quantity.required=!!goal?.value;quantity.disabled=!goal?.value;}
 }
-async function materialResultForm(productId,goalId){
-  const [products,goals,tasks]=await Promise.all([api('/api/material-products'),api('/api/material-goals'),api('/api/tasks')]);
-  materialResultOptions={goals,tasks};
+async function materialResultForm(productId,goalId,experimentId){
+  const [products,goals,tasks,experiments]=await Promise.all([api('/api/material-products'),api('/api/material-goals'),api('/api/tasks'),api('/api/material-experiments')]);
+  materialResultOptions={goals,tasks,experiments};
   const goal=goals.find(g=>g.id===goalId),product=productId||goal?.product_id||state.materialProduct||products[0]?.id,user=goal?.user_id||materialPerson();
   const relevant=goals.filter(g=>g.product_id===product&&g.user_id===user),related=tasks.filter(t=>t.product_id===product&&t.assigned_to===user);
   formModal('Registrar resultado de desenvolvimento',sel('Produto','product_id',products.map(p=>[p.id,p.name]),product,'required id="material-result-product"')+
     (admin()?sel('Responsável pelo resultado','user_id',state.users.filter(x=>x.active&&x.role==='desenvolvimento').map(x=>[x.id,x.name]),user,'required id="material-result-user"'):'')+
+    sel('Roteiro utilizado (opcional)','experiment_id',[['','Sem roteiro vinculado'],...experiments.filter(x=>x.product_id===product).map(x=>[x.id,x.title+' · v'+x.version])],experimentId||'','id="material-result-experiment"')+
     date('Data do resultado','occurred_on',today(),'required')+sf('Título do resultado','title','','text','required maxlength="200"')+
     sel('Meta vinculada (opcional)','goal_id',[['','Sem meta vinculada'],...relevant.map(g=>[g.id,g.title+' · '+g.unit])],goalId||'','id="material-result-goal"')+
     sf('Quantidade realizada para a meta','quantity','','number',`min="0.01" step="any" id="material-result-quantity" ${goalId?'required':'disabled'}`)+
@@ -2464,6 +2580,7 @@ async function materialResultDetail(id){
   const r=await api('/api/material-results/'+id),ev=r.evidence||{};
   dialog(r.title,`<div class="detail-summary">${badge(r.product_name,'blue')}${badge(human(r.occurred_on))}${badge(r.person_name)}</div>
     <div class="workflow-stack"><div class="workflow-item"><b>Resultado observado</b><p>${e(r.outcome)}</p></div>
+    ${r.protocol_snapshot?'<details><summary>Roteiro utilizado · '+e(r.protocol_snapshot.title)+' · v'+r.protocol_snapshot.version+'</summary>'+['objective','hypothesis','materials','procedure','success_criteria'].map(k=>'<p class="lead-notes">'+e(r.protocol_snapshot[k])+'</p>').join('')+'</details>':''}
     ${r.method?`<div class="workflow-item"><b>Método e identificação</b><p>${e(r.method)}</p></div>`:''}
     ${r.goal_id?`<div class="workflow-item"><b>${e(r.goal_title)}</b><p>Contribuição registrada · ${fmt(r.quantity)} ${e(r.unit)}</p></div>`:''}
     ${r.task_id?`<div class="workflow-item">${button('Atividade · '+e(r.task_title),'task-detail',itemRef(r.task_id),'text-link')}</div>`:''}
@@ -2722,6 +2839,7 @@ async function taskForm(record = null, template = null) {
       (admin() && v.pay_review?.status !== "approved" ? sel("Status", "status",
         ["pendente", "em_andamento", "bloqueada", "cancelada", ...(v.status === "concluida" ? ["concluida"] : [])]
           .map(x => [x, label(x)]), v.status) : "") +
+      (!old&&materialAccess()?`<fieldset id="material-work-fields" class="pay-fields" ${v.startup_id===MATERIAL_SPACE?"":"hidden disabled"}><legend>Trabalho já realizado (opcional)</legend>${workFields()}</fieldset>`:"") +
       date("Data de execução", "planned_date", v.planned_date) +
       date("Prazo de entrega", "due_date", v.due_date) +
       text("Descrição detalhada", "description", v.description || "") +
@@ -2732,6 +2850,7 @@ async function taskForm(record = null, template = null) {
       ) + (managesTaskPay() && old?.source !== "story_repost" && (!old || (old.creator_id === "1" && !old.evidence_log?.length && !old.pay_review)) ? payTermFields(v.pay_terms) : ""),
     async (b) => {
       if(b.startup_id!==MATERIAL_SPACE)delete b.product_id;
+      normalizeWork(b);
       b.checklist = parseChecklist(b.checklist, v.checklist);
       await api(
         "/api/tasks" + (old ? "/" + old.id : ""),
@@ -2852,9 +2971,15 @@ async function setTaskStatus(id, status) {
 async function taskDetail(id) {
   const t = await api("/api/tasks/" + id);
   if (usesPublicationEvidence(t)) return publicationTaskDetail(t);
+  let workSummary="";
+  if(t.product_id&&materialAccess()){
+    const logs=(await api("/api/material-worklogs")).filter(r=>r.task_id===t.id);
+    const rows=workLogRows([t],logs);
+    workSummary=card("Tempo dedicado",rows.length?rows.map(r=>'<p>'+dateTime(r.work_started_at)+' — '+dateTime(r.work_ended_at)+' · '+workDuration(r.work_minutes)+'</p>').join(""):'<p>Nenhum período registrado.</p>');
+  }
   dialog(
     t.title,
-    `<div class="detail-summary">${badge(startupName(t.startup_id), "blue")}${t.product_name?badge(t.product_name,"blue"):""}${badge(t.source === "story_repost" ? "Repostagem · sem remuneração" : t.source === "propria" ? "Atividade própria" : "Definida pela gestão")}${priority(t.priority)}${badge(t.status)}${t.planned_date ? badge("Execução " + human(t.planned_date)) : ""}${t.due_date ? badge("Prazo " + human(t.due_date)) : ""}</div><p class="detail-description">${e(t.description || "Sem descrição adicional.")}</p>${externalLink(t.source_url, "Abrir Reel original")}${taskPaySummary(t)}${taskEvidence(t)}<div class="section-label">CHECKLIST · ${(t.checklist || []).filter((x) => x.done).length}/${(t.checklist || []).length}</div>${(t.checklist || []).map((x) => `<label class="checklist-row ${x.done ? "done" : ""}"><input type="checkbox" data-task-check="${t.id}" data-check-id="${e(x.id)}" ${x.done ? "checked" : ""}><span>${e(x.title)}</span></label>`).join("") || '<div class="tiny muted">Nenhuma etapa cadastrada.</div>'}<div class="section-label">COMENTÁRIOS</div>${(t.comments || []).map((x) => `<div class="comment">${e(x.content)}<small>${e(x.author)} · ${dateTime(x.created_at)}</small></div>`).join("")}<form id="comment-form" data-id="${t.id}"><label>Adicionar comentário<textarea name="content" required maxlength="3000" placeholder="Registre uma atualização para a equipe…"></textarea></label><div class="form-actions"><button class="primary small">Publicar comentário</button></div></form><div class="section-label">ANEXOS</div>${(t.attachments || []).filter(a => !a.evidence).map((a) => `<div class="attachment"><a href="/api/tasks/${t.id}/attachments/${a.id}" download="${e(a.name)}" >${icon("paperclip")} ${e(a.name)}</a><span class="muted tiny">${fmt(Math.ceil(a.size_bytes / 1024))} KB</span>${admin() ? button(icon("x"), "attachment-delete", `data-id="${a.id}" data-task="${t.id}" aria-label="Remover anexo"`, "icon-btn") : ""}</div>`).join("") || '<p class="tiny muted">Nenhum anexo nesta atividade.</p>'}<label>Anexar arquivo · até 5 MB<input class="file-input" type="file" data-task-upload="${t.id}"></label><div class="section-label">HISTÓRICO DE ALTERAÇÕES</div>${historyHTML(t.events || [])}<div class="form-actions">${button("Fechar", "close-dialog")}${admin() ? button(icon("pencil") + "Editar atividade", "task-edit", `data-id="${t.id}"`, "primary") : ""}</div>`,
+    `<div class="detail-summary">${badge(startupName(t.startup_id), "blue")}${t.product_name?badge(t.product_name,"blue"):""}${badge(t.source === "story_repost" ? "Repostagem · sem remuneração" : t.source === "propria" ? "Atividade própria" : "Definida pela gestão")}${priority(t.priority)}${badge(t.status)}${t.planned_date ? badge("Execução " + human(t.planned_date)) : ""}${t.due_date ? badge("Prazo " + human(t.due_date)) : ""}</div><p class="detail-description">${e(t.description || "Sem descrição adicional.")}</p>${externalLink(t.source_url, "Abrir Reel original")}${workSummary}${taskPaySummary(t)}${taskEvidence(t)}<div class="section-label">CHECKLIST · ${(t.checklist || []).filter((x) => x.done).length}/${(t.checklist || []).length}</div>${(t.checklist || []).map((x) => `<label class="checklist-row ${x.done ? "done" : ""}"><input type="checkbox" data-task-check="${t.id}" data-check-id="${e(x.id)}" ${x.done ? "checked" : ""}><span>${e(x.title)}</span></label>`).join("") || '<div class="tiny muted">Nenhuma etapa cadastrada.</div>'}<div class="section-label">COMENTÁRIOS</div>${(t.comments || []).map((x) => `<div class="comment">${e(x.content)}<small>${e(x.author)} · ${dateTime(x.created_at)}</small></div>`).join("")}<form id="comment-form" data-id="${t.id}"><label>Adicionar comentário<textarea name="content" required maxlength="3000" placeholder="Registre uma atualização para a equipe…"></textarea></label><div class="form-actions"><button class="primary small">Publicar comentário</button></div></form><div class="section-label">ANEXOS</div>${(t.attachments || []).filter(a => !a.evidence).map((a) => `<div class="attachment"><a href="/api/tasks/${t.id}/attachments/${a.id}" download="${e(a.name)}" >${icon("paperclip")} ${e(a.name)}</a><span class="muted tiny">${fmt(Math.ceil(a.size_bytes / 1024))} KB</span>${admin() ? button(icon("x"), "attachment-delete", `data-id="${a.id}" data-task="${t.id}" aria-label="Remover anexo"`, "icon-btn") : ""}</div>`).join("") || '<p class="tiny muted">Nenhum anexo nesta atividade.</p>'}<label>Anexar arquivo · até 5 MB<input class="file-input" type="file" data-task-upload="${t.id}"></label><div class="section-label">HISTÓRICO DE ALTERAÇÕES</div>${historyHTML(t.events || [])}<div class="form-actions">${button("Fechar", "close-dialog")}${admin() ? button(icon("pencil") + "Editar atividade", "task-edit", `data-id="${t.id}"`, "primary") : ""}</div>`,
   );
 }
 async function leadForm(v = null) {
@@ -3747,6 +3872,15 @@ document.addEventListener("click", async (ev) => {
       state.filter.tasks = {};
       return navigate("tasks");
     }
+    if(action==='material-trl')return trlForm(id);
+    if(action==='material-experiment-new')return experimentForm();
+    if(action==='material-experiment-detail')return experimentDetail(id);
+    if(action==='material-experiment-edit')return experimentForm(id);
+    if(action==='material-experiment-result'){
+      const experiment=await api("/api/material-experiments/"+id);
+      return materialResultForm(experiment.product_id,undefined,id);
+    }
+    if(action==='material-work-new')return workLogForm();
     if(action==='material-scope'){state.startup=MATERIAL_SPACE;$('#startup-filter').value=MATERIAL_SPACE;return render()}
     if(action==='material-tab'){state.materialTab=value;return navigate('materials')}
     if(action==='material-open'){state.materialProduct=id;state.materialTab='overview';return navigate('materials')}
@@ -4092,6 +4226,7 @@ document.addEventListener("change", async (ev) => {
       state.pagination = {};
       return render();
     }
+    if(['worklog-product','worklog-user'].includes(x.id)){syncWorkTasks();return}
     if(x.id==='material-product'){state.materialProduct=x.value;state.pagination={};return render()}
     if(x.id==='material-status'){state.materialStatus=x.value;state.pagination={};return render()}
     if(['material-result-product','material-result-user'].includes(x.id)){syncMaterialResultOptions();return}
@@ -4106,6 +4241,8 @@ document.addEventListener("change", async (ev) => {
       return render();
     }
     if (x.name === "startup_id" && $("#operation-form")) {
+      const workFields=$("#material-work-fields");
+      if(workFields){workFields.hidden=x.value!==MATERIAL_SPACE;workFields.disabled=workFields.hidden;}
       const product=$("#material-task-product");
       if(product){product.disabled=x.value!==MATERIAL_SPACE;product.required=!product.disabled;product.closest("label").hidden=product.disabled;}
       const owner = $("[data-owner-field]");
