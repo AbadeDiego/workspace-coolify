@@ -57,6 +57,7 @@ export function assertNoOverlap(db, userId, interval) {
   const all = [
     ...db.tasks.filter(row => row.work_started_at).map(row => ({...row, user_id:row.assigned_to})),
     ...(db["material-worklogs"] || []),
+    ...(db["commercial-worklogs"] || []).filter(row=>!row.voided_at),
   ];
   if (all.some(row => row.user_id === userId &&
     row.work_started_at < interval.work_ended_at && row.work_ended_at > interval.work_started_at)) {

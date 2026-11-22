@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { start } from "../src/server.mjs";
+import { useWorkspace } from "../src/database.mjs";
+import { commercialRoute } from "../src/commercial-work.mjs";
 
 const connection = process.env.TEST_DATABASE_URL;
 const origin = "https://workspace.example.test";
@@ -105,7 +107,13 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal((await read("finance-context",diego)).monthly[0].income_cents,20000);
   assert.equal((await read("finance-context",diego)).monthly[0].expense_cents,null);
 
-  const task = await post("tasks", {startup_id:startup,assigned_to:"2",title:"Teste de entrega",priority:"alta",pay_base:"80",pay_bonus:"10",pay_quality:"Relatório",pay_result:"Resultado comprovado"}, diego);
+  const task = await post("tasks", {startup_id:startup,assigned_to:"2",title:"Teste de entrega",priority:"alta"}, diego);
+  await post("tasks", {startup_id:startup,assigned_to:"2",title:"Modelo antigo bloqueado",pay_base:"80",pay_quality:"Relatório"}, diego,400);
+  // An existing paid task from the previous release keeps its agreed terms.
+  const legacyClient=new pg.Client({connectionString:url.href});
+  await legacyClient.connect();
+  await legacyClient.query("UPDATE workspace_records SET data=data || jsonb_build_object('pay_terms',$1::jsonb) WHERE collection='tasks' AND record_key=$2",[JSON.stringify({base_cents:8000,bonus_cents:1000,quality:"Relatório",result:"Resultado comprovado"}),task.id]);
+  await legacyClient.end();
   await api("tasks/"+task.id,"GET",undefined,annike,403);
   await patch("tasks/"+task.id,{status:"concluida"},eduarda,400);
   const finished = await patch("tasks/"+task.id,{status:"concluida",evidence:{note:"Concluído",file:{name:"Relatório.txt",data:"T2s="}}},eduarda);
@@ -117,6 +125,17 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   await post("tasks/"+task.id+"/review",{decision:"approve",feedback:"Aprovada"},diego,200);
   assert.equal((await read("task-payments",eduarda)).entries[0].cents,8000);
   assert.equal((await read("task-payments",larissa)).entries.length,0);
+
+  const commercialTask=await post("tasks",{startup_id:startup,assigned_to:"2",title:"Retornos comerciais",expected_result:"Avançar os contatos para reunião"},diego);
+  const workPeriod={task_id:commercialTask.id,work_started_at:"2026-11-16T08:00:00-03:00",work_ended_at:"2026-11-16T10:00:00-03:00",note:"Retornos aos contatos",metric:"contatos",quantity:4,result:"Contato pediu apresentação; agendar reunião."};
+  const commercialLog=await post("commercial-worklogs",workPeriod,eduarda);
+  await post("commercial-worklogs",workPeriod,eduarda,400);
+  await api("commercial-worklogs","GET",undefined,annike,403);
+  await api("commercial-reports?userId=3","GET",undefined,eduarda,403);
+  const hoursReport=(await read("commercial-reports?month=2026-11",eduarda))[0];
+  assert.equal(hoursReport.monthly_minutes,120);assert.equal(hoursReport.weekly_minutes,1200);assert.equal(hoursReport.monthly_cents,150000);
+  await post("commercial-settlements",{user_id:"2",month:"2026-11",decision:"approve",feedback:"Revisado"},eduarda,403);
+  await post("commercial-settlements",{user_id:"2",month:"2026-11",decision:"changes",feedback:"Detalhar próximos passos de cada retorno"},diego,200);
 
   const product = (await read("material-products",vanessa))[0];
   const materialGoal = await post("material-goals", {product_id:product.id,user_id:"vanessa-materials",title:"Testar material",target:2,unit:"ensaios",start_date:date,end_date:"2026-12-31"}, diego);
@@ -197,6 +216,25 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal((await read("leads",eduarda)).length,93);
   assert.equal((await read("material-goals",vanessa))[0].done,1);
   assert.equal((await read("task-payments",eduarda)).entries.length,1);
+  assert.equal((await read("commercial-worklogs",eduarda))[0].id,commercialLog.id);
+  assert.equal((await read("commercial-reports?month=2026-11",eduarda))[0].settlement.status,"changes");
+  // Exercise two closings against the real transaction lock with a clock
+  // after month end, without changing the HTTP server's session clock.
+  const closingPool=new pg.Pool({connectionString:url.href});
+  try {
+    const closeMonth=()=>useWorkspace(closingPool,true,async snapshot=>{
+      const add=(collection,body)=>{const row={...body,id:String(++snapshot.sequence),created_at:"2026-12-02T12:00:00Z"};snapshot.db[collection].unshift(row);return row;};
+      try {
+        const result=commercialRoute({name:"commercial-settlements",method:"POST",body:{user_id:"2",month:"2026-11",decision:"approve",feedback:"Horas, indicadores e resultados avaliados pela Gestão."},url:new URL("http://local/api/commercial-settlements"),db:snapshot.db,me:snapshot.db.users.find(u=>u.id==="1"),add,now:()=>"2026-12-02T12:00:00Z"});
+        return Response.json(result.data,{status:result.status});
+      }catch(error){return Response.json({error:error.message},{status:error.status||400});}
+    });
+    const closings=await Promise.all([closeMonth(),closeMonth()]);
+    assert.deepEqual(closings.map(r=>r.status).sort(),[200,400]);
+  } finally {await closingPool.end();}
+  const monthlyEntries=(await read("task-payments?startupId="+startup,eduarda)).entries.filter(x=>x.kind==="commercial_monthly");
+  assert.deepEqual(monthlyEntries.map(x=>x.cents),[150000]);
+  await post("commercial-worklogs",{...workPeriod,work_started_at:"2026-11-17T08:00:00-03:00",work_ended_at:"2026-11-17T09:00:00-03:00"},eduarda,400);
   assert.equal((await read("follower-readings",larissa)).length,6);
   assert.equal((await read("tasks",larissa)).filter(task => task.source === "story_repost").length,6);
   const retainedRepost=await read("tasks/"+completedRepost.id,larissa);

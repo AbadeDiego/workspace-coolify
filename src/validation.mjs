@@ -11,7 +11,9 @@ const collections = {
   startups: "",
   "follower-readings": "startup_id assigned_to account followers evidence_url",
   users: "name email role active job_title responsibilities avatar_url password",
-  tasks: "startup_id product_id assigned_to title description priority status planned_date due_date checklist evidence work_started_at work_ended_at pay_base pay_bonus pay_quality pay_result",
+  tasks: "startup_id product_id assigned_to title description expected_result priority status planned_date due_date checklist evidence work_started_at work_ended_at pay_base pay_bonus pay_quality pay_result",
+  "commercial-worklogs": "task_id work_started_at work_ended_at note result metric quantity evidence_url lead_id void_reason",
+  "commercial-settlements": "user_id month decision feedback",
   leads: "startup_id owner_id name company phone email city segment origin campaign_name public_body stakeholders documents_due documents_notes estimated_value next_contact_at meeting_at notes stage proposal",
   deals: "lead_id title value installments first_due_date",
   finance: "startup_id entry_type description amount expense_class status category cost_center entry_date due_date competence_date",
@@ -28,10 +30,10 @@ const collections = {
   "material-results": "product_id user_id goal_id task_id occurred_on experiment_id title quantity method outcome next_steps evidence",
 };
 
-const readOnly = new Set(["me", "bootstrap", "task-payments", "campaign-results",
+const readOnly = new Set(["commercial-reports", "me", "bootstrap", "task-payments", "campaign-results",
   "campaign-options", "finance-context", "reports", "history", "customers", "invoices"]);
 const canPatch = new Set(["users", "tasks", "leads", "finance", "goals", "marketing",
-  "technology", "templates", "material-products", "material-goals", "material-experiments"]);
+  "technology", "templates", "material-products", "material-goals", "material-experiments", "commercial-worklogs"]);
 const canDelete = new Set(["tasks", "leads", "finance", "marketing", "technology"]);
 
 export function validateRoute(parts, method) {
@@ -132,6 +134,8 @@ export function validateWrite(name, action, method, body, previous) {
     if (typeof value !== "string" || !value.trim() || value.length > max) throw new InputError("Preencha " + key + ".");
   };
   const status = statuses[action || name];
+  if (body.expected_result !== undefined && (typeof body.expected_result !== "string" || body.expected_result.length > 3000))
+    throw new InputError("Descreva o resultado esperado em até 3.000 caracteres.");
   if (status && body.status !== undefined) select(body.status, status, "status");
   if (body.priority !== undefined) select(body.priority, ["urgente", "alta", "media", "baixa"], "prioridade");
   if (action === "attachments") attachmentBytes(body, 5 * 1024 * 1024);

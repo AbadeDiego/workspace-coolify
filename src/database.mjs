@@ -7,6 +7,8 @@ const seed = {
   ...JSON.parse(await readFile(new URL("./seed.json", import.meta.url), "utf8")),
   "material-experiments": [],
   "material-worklogs": [],
+  "commercial-worklogs": [],
+  "commercial-settlements": [],
 };
 const migration = await readFile(new URL("../sql/001-initial.sql", import.meta.url), "utf8");
 

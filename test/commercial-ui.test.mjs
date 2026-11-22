@@ -1,0 +1,36 @@
+import test from 'node:test';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {workspaceDomain} from '../src/domain.mjs';
+
+test('Comercial: telas, períodos por atividade, resultados e remuneração mensal',async()=>{
+  const db=JSON.parse(await readFile(new URL('../src/seed.json',import.meta.url),'utf8'));
+  for(const name of ['material-experiments','material-worklogs','commercial-worklogs','commercial-settlements'])db[name]=[];
+  for(const user of db.users)user.active=true;
+  const model={db,sequence:1000},startup=db.memberships.find(m=>m.user_id==='2').startup_id;
+  const call=async(path,body)=>{const r=await workspaceDomain(model,'2')('/api/'+path,'POST',body);assert(r.ok,await r.clone().text());return r.json();};
+  const task=await call('tasks',{startup_id:startup,title:'Prospecção com retorno',expected_result:'Converter interesse em reunião'});
+  await call('commercial-worklogs',{task_id:task.id,work_started_at:'2026-11-16T08:00:00-03:00',work_ended_at:'2026-11-16T10:00:00-03:00',metric:'contatos',quantity:4,note:'Retornos comerciais',result:'Apresentação solicitada. Próximo passo: agendar reunião.'});
+  const nodes=new Map(),el=()=>({innerHTML:'',value:'',open:false,dataset:{},showModal(){this.open=true},close(){},focus(){},setAttribute(){},classList:{add(){},remove(){},toggle(){},contains(){return false}},querySelector:()=>el(),querySelectorAll:()=>[]});
+  const document={addEventListener(){},querySelector(s){if(!nodes.has(s))nodes.set(s,el());return nodes.get(s)},querySelectorAll:()=>[]};
+  const ctx=vm.createContext({document,window:{matchMedia:()=>({matches:false,addEventListener(){}})},URL,console,setTimeout,fetch:async(path,opts={})=>workspaceDomain(model,'2')(path,opts.method||'GET',JSON.parse(opts.body||'{}'))});
+  const js=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  vm.runInContext('const MATERIAL_SPACE="materials-palma";const taskPayRoles=["comercial","marketing","marketing_externo"];'+js.slice(js.indexOf('const $ ='),js.lastIndexOf('(async () => {')),ctx);
+  const run=s=>vm.runInContext(s,ctx);
+  ctx.me=db.users.find(u=>u.id==='2');ctx.startups=db.startups.filter(s=>s.id===startup);ctx.taskId=task.id;
+  run('Object.assign(state,{me,startups,users:[me],section:"commercial-work",startup:"",period:"all",commercialMonth:"2026-11",payMonth:"2026-11"})');
+  assert.equal(run('canOpen("commercial-work")'),true);
+  const html=await run('commercialWorkPage()');
+  assert.match(html,/Horas por semana/);assert.match(html,/Contratos fechados/);assert.match(html,/Próximo passo: agendar reunião/);assert.doesNotMatch(html,/NaN|>undefined</);
+  run('state.view.tasks="list"');assert.match(await run('tasksPage()'),/Horas comerciais/);
+  await run('commercialWorkForm(taskId)');
+  const form=nodes.get('#modal-body').innerHTML;
+  assert.match(form,/name="work_started_at"[^>]*required/);assert.match(form,/name="result"[^>]*required/);assert.match(form,/name="quantity"/);
+  await run('taskDetail(taskId)');assert.match(nodes.get('#modal-body').innerHTML,/Horas e resultados desta atividade/);assert.match(nodes.get('#modal-body').innerHTML,/Converter interesse em reunião/);
+  await run('taskForm()');assert.match(nodes.get('#modal-body').innerHTML,/name="expected_result"/);
+  assert.match(await run('commercialPage()'),/20 horas semanais/);
+  const pending=await run('personalFinancePage()');assert.match(pending,/Referência mensal/);assert.match(pending,/Em acompanhamento/);
+  db.taskPayments.push({id:'monthly',kind:'commercial_monthly',assigned_to:'2',month:'2026-11',cents:150000,title:'Remuneração mensal · Comercial',approved_at:'2026-12-01T12:00:00Z'});
+  const paid=await run('personalFinancePage()');assert.match(paid,/1\.500,00/);assert.doesNotMatch(paid,/0 seguidores/);
+});

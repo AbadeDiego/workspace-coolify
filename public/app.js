@@ -78,6 +78,7 @@ const NAV = [
   ["goals", "target", "Metas", "Gestão"],
   ["crm", "filter", "Prospecção ativa", "Negócios"],
   ["commercial", "chart-no-axes-combined", "Comercial", "Negócios"],
+  ["commercial-work", "clock-3", "Horas e resultados", "Negócios"],
   ["finance", "wallet", "Financeiro", "Negócios"],
   ["personal-finance", "coins", "Finanças pessoais", "Negócios"],
   ["marketing", "megaphone", "Marketing", "Operações"],
@@ -162,7 +163,7 @@ const canOpen = key => {
   if(key === "materials")return materialAccess();
   if (key === "personal-finance") return managesTaskPay() || taskPayRoles.includes(state.me?.role);
   if (["finance", "people"].includes(key)) return admin();
-  if (["crm", "commercial"].includes(key)) return crmAccess();
+  if (["crm", "commercial", "commercial-work"].includes(key)) return crmAccess();
   if (key === "marketing") return marketingViewer();
   if (["tech", "processes"].includes(key)) return admin();
   return true;
@@ -1033,6 +1034,7 @@ async function tasksPage() {
           { title: "Startup", key: "startup_name" },
           ...(data.some(t=>t.product_id)?[{title:"Produto",key:"product_name"}]:[]),
           { title: "Responsável", key: "assignee_name" },
+          ...(data.some(t=>t.commercial_work_minutes!==undefined)?[{title:"Horas comerciais",render:t=>t.commercial_work_minutes!==undefined?workDuration(t.commercial_work_minutes):"—"}]:[]),
           {
             title: "Prioridade",
             key: "priority",
@@ -1111,6 +1113,7 @@ function workTaskList(rows, day, mode, showOwner) {
           <span>${e(task.product_name || task.startup_name || startupName(task.startup_id))}</span>
           ${showOwner ? `<span>Responsável · ${e(personName(String(task.assigned_to), task.assignee_name))}</span>` : ""}
           ${planned ? `<span>Execução · ${human(planned)}</span>` : ""}
+          ${task.commercial_work_minutes!==undefined?`<span>Trabalho · ${workDuration(task.commercial_work_minutes)}</span>`:""}
           <span class="${overdue ? "daily-overdue" : ""}">${dueText}</span>
         </div>
       </div>
@@ -1454,6 +1457,8 @@ async function commercialPage() {
     ) +
     periodBar() +
     `<div class="kpis">${kpi("Leads gerados", l.length, "Cadastros no período", "blocks")}${kpi("Contatos realizados", contacts.length, "Primeiras abordagens no período", "phone")}${kpi("Contratos fechados", sales.length, "Vendas no período", "handshake")}${kpi("Receita contratada", brl(sum(sales, "value_cents")), "Valor contratado no período", "badge-dollar-sign")}</div><div class="metric-strip"><div class="mini-metric"><small>Reuniões no período</small><b>${meetings.length}</b></div><div class="mini-metric"><small>Reuniões realizadas</small><b>${leads.filter((x) => x.meeting_done_at && (state.period === "all" || inPeriod(x, "meeting_done_at"))).length}</b></div><div class="mini-metric"><small>Propostas registradas</small><b>${leads.filter((x) => x.proposal_sent_at && (state.period === "all" || inPeriod(x, "proposal_sent_at"))).length}</b></div><div class="mini-metric"><small>Negociações abertas</small><b>${leads.filter((x) => x.stage === "Fechamentos").length}</b></div><div class="mini-metric"><small>Clientes na carteira</small><b>${leads.filter((x) => x.stage === "Clientes").length}</b></div><div class="mini-metric"><small>Conversão da carteira</small><b>${conversion}%</b></div></div>`;
+  const commercialHours=await api('/api/commercial-reports?month='+today().slice(0,7)+(ownerFilter?'&userId='+encodeURIComponent(ownerFilter):''));
+  h+=commercialHours.map(r=>commercialSummary(r,true)).join('');
   const months = [
     ...new Set(
       [...(report.commercial || []), ...(report.sales || [])].map(
@@ -2611,6 +2616,7 @@ const PAGES = {
   goals: goalsPage,
   crm: crmPage,
   commercial: commercialPage,
+  "commercial-work": commercialWorkPage,
   finance: financePage,
   "personal-finance": personalFinancePage,
   marketing: marketingPage,
@@ -2757,6 +2763,95 @@ function followerHistory(rows, manager) {
   manager ? button("Validar contagem", "new-follower-reading", "", "primary small") : "");
 }
 
+const commercialMetric = metric => ({contatos:"Contatos",reunioes:"Reuniões",propostas:"Propostas",negociacoes:"Negociações",outro:"Outro indicador"})[metric] || metric;
+const commercialReviewLabel = status => ({approved:"Mês aprovado",changes:"Ajustes solicitados"})[status] || "Em acompanhamento";
+function commercialSummary(report, finance = false) {
+  const r=report,i=r.indicators,w=r.current_week;
+  const settled=r.settlement?.status==='approved';
+  return card(r.person_name+' · '+longMonth(r.month),
+    `<div class="kpis">${kpi("Referência mensal",brl(r.monthly_cents),"20 horas semanais · desde nov/2026","wallet")}
+    ${kpi("Horas registradas no mês",workDuration(r.monthly_minutes),"Tempo efetivamente dedicado às atividades","clock-3")}
+    ${kpi("Semana atual",workDuration(w.minutes),human(w.week_start)+" a "+human(w.week_end),"calendar-days")}
+    ${kpi("Faltam nesta semana",workDuration(w.remaining_minutes),"Meta de 20h · segunda a domingo","target")}</div>`+
+    progress(w.minutes,r.weekly_minutes)+
+    `<p class="tiny muted">Progresso da semana atual: ${workDuration(w.minutes)} de 20h. Carga somada entre todas as startups da pessoa; o filtro de startup não fraciona a remuneração mensal.</p>`+
+    (finance?'':`<div class="metric-strip"><div class="mini-metric"><small>Contatos no CRM</small><b>${i.contacts}</b></div><div class="mini-metric"><small>Reuniões realizadas</small><b>${i.meetings}</b></div><div class="mini-metric"><small>Propostas enviadas</small><b>${i.proposals}</b></div><div class="mini-metric"><small>Contratos fechados</small><b>${i.contracts}</b></div><div class="mini-metric"><small>Receita contratada</small><b>${brl(i.contracted_cents)}</b></div><div class="mini-metric"><small>Atividades concluídas</small><b>${i.completed_tasks}</b></div></div><p class="tiny muted">Resultados do CRM na competência selecionada. Os indicadores informados nos períodos de trabalho aparecem no histórico, sem somá-los novamente ao CRM.</p>`)+
+    `<div class="between">${badge(commercialReviewLabel(r.settlement?.status),settled?"ok":"warn")}${button("Ver horas e resultados","commercial-work-open",itemRef(r.user_id)+` data-month="${e(r.month)}"`,"small")}</div>`+
+    (r.settlement?.feedback?`<p class="lead-notes">${e(r.settlement.feedback)}</p>`:'<p class="tiny muted">O acompanhamento das horas não libera a remuneração automaticamente. Diego avalia o mês junto dos indicadores e resultados.</p>')+
+    (!settled&&managesTaskPay()?`<div class="workflow-actions">${button("Solicitar ajustes","commercial-month-review",itemRef(r.user_id)+` data-month="${e(r.month)}" data-value="changes"`,"small")}${r.can_close?button("Aprovar fechamento · R$ 1.500","commercial-month-review",itemRef(r.user_id)+` data-month="${e(r.month)}" data-value="approve"`,"small primary"):'<span class="tiny muted">Fechamento disponível após o último dia do mês.</span>'}</div>`:"")+
+    (settled?'<p class="tiny muted">Valor registrado no extrato da competência. Horas do mês preservadas após o fechamento.</p>':""),
+    "R$ 1.500 por mês · sem cálculo automático de descontos ou horas extras");
+}
+async function commercialWorkPage(){
+  const month=state.commercialMonth||today().slice(0,7),person=admin()?state.commercialPerson||"":state.me.id;
+  const reports=await api('/api/commercial-reports?month='+month+(person?'&userId='+encodeURIComponent(person):''));
+  const logs=(await api('/api/commercial-worklogs'+(person?'?userId='+encodeURIComponent(person):'')))
+    .filter(r=>Date.parse(r.work_started_at)<Date.parse(monthEnd(month+'-01')+'T23:59:59.999-03:00')&&Date.parse(r.work_ended_at)>Date.parse(month+'-01T00:00:00-03:00'))
+    .sort((a,b)=>b.work_started_at.localeCompare(a.work_started_at));
+  state.commercialReports=reports;
+  state.exports=logs.map(r=>({Pessoa:r.person_name,Atividade:r.task_title,Inicio:r.work_started_at,Fim:r.work_ended_at,Minutos:r.work_minutes,Trabalho:r.note,Indicador:commercialMetric(r.metric),Quantidade:r.quantity,Resultado:r.result,Situacao:r.voided_at?'Invalidado':'Registrado'}));
+  return intro("Horas e resultados do Comercial","20 horas semanais e R$ 1.500 mensais, com foco nas entregas e no avanço da carteira.",button("Registrar período","commercial-work-new","","primary"))+
+    `<div class="daily-controls">${sf("Mês de acompanhamento","commercial-month",month,"month",'id="commercial-month"')}${admin()?sel("Pessoa","commercial-person",[["","Todo o Comercial"],...state.users.filter(u=>u.role==='comercial').map(u=>[u.id,u.name])],person,'id="commercial-person"'):""}</div>`+
+    (reports.length?reports.map(r=>commercialSummary(r)+card("Horas por semana · "+r.person_name,table(r.weeks,[
+      {title:"Semana",render:w=>human(w.week_start)+" a "+human(w.week_end)},
+      {title:"Horas na semana",render:w=>workDuration(w.minutes)},
+      {title:"Meta semanal",render:()=>"20h"},{title:"Faltam",render:w=>workDuration(w.remaining_minutes)},
+      {title:"Horas nesta competência",render:w=>workDuration(w.month_minutes)},
+    ],"commercial-weeks",false,false),"Semanas de segunda a domingo. A semana completa pode atravessar dois meses; a coluna da competência considera apenas os dias do mês selecionado.")).join(''):empty("Nenhum perfil Comercial disponível"))+
+    card("Períodos e resultados das atividades",commercialLogTable(logs),"Cada período mantém o trabalho realizado, indicador, resultado e próximo passo. Pausas devem ficar fora dos intervalos.");
+}
+function commercialLogTable(logs){
+  return table(logs,[
+    {title:"Atividade",render:r=>button(e(r.task_title),"task-detail",itemRef(r.task_id),"text-link")+`<small class="table-sub">${e(r.person_name)} · ${e(r.startup_name)}</small>`},
+    {title:"Período",render:r=>dateTime(r.work_started_at)+" → "+dateTime(r.work_ended_at)},
+    {title:"Duração",render:r=>workDuration(r.work_minutes)},
+    {title:"Trabalho",key:"note"},{title:"Indicador informado",render:r=>e(commercialMetric(r.metric))+" · "+fmt(r.quantity)},
+    {title:"Resultado e próximo passo",render:r=>`<p class="lead-notes">${e(r.result)}</p>`+externalLink(r.evidence_url,"Evidência")+(r.lead_name?`<small class="table-sub">Lead: ${e(r.lead_name)}</small>`:"")},
+    {title:"Situação",render:r=>r.voided_at?badge("Invalidado","bad")+`<p class="tiny">${e(r.void_reason)}</p>`:badge("Registrado","blue")+(managesTaskPay()?button("Invalidar período","commercial-work-void",itemRef(r.id),"text-link"):"")},
+  ],"commercial-worklogs",false,false);
+}
+let commercialWorkOptions={tasks:[],leads:[]};
+function syncCommercialLead(){
+  const task=commercialWorkOptions.tasks.find(t=>t.id===$('#commercial-log-task').value),field=$('#commercial-log-lead');
+  field.innerHTML=options([["","Sem lead específico"],...commercialWorkOptions.leads.filter(l=>l.owner_id===task?.assigned_to&&l.startup_id===task?.startup_id).map(l=>[l.id,l.company||l.name])],"");
+}
+async function commercialWorkForm(taskId){
+  const [allTasks,leads]=await Promise.all([api('/api/tasks'),api('/api/leads')]);
+  const tasks=allTasks.filter(t=>!['cancelada'].includes(t.status)&&(state.users.find(u=>u.id===t.assigned_to)?.role==='comercial'||state.me.role==='comercial'&&t.assigned_to===state.me.id));
+  commercialWorkOptions={tasks,leads};
+  if(!tasks.length)return dialog("Registrar horas",'<p>Crie uma atividade para o Comercial antes de registrar o trabalho.</p>'+button("Criar atividade","new-task","","primary"));
+  formModal("Registrar trabalho do Comercial",
+    sel("Atividade","task_id",tasks.map(t=>[t.id,t.title+' · '+(t.assignee_name||state.me.name)+' · '+t.startup_name]),taskId||tasks[0]?.id,'required id="commercial-log-task"')+
+    sf("Início do trabalho","work_started_at","","datetime-local","required")+sf("Fim do trabalho","work_ended_at","","datetime-local","required")+
+    '<p class="tiny muted full">Informe períodos já trabalhados e exclua pausas. A soma considera todas as startups, sem horários sobrepostos.</p>'+
+    text("Trabalho realizado","note","",'required maxlength="3000"')+
+    sel("Indicador acompanhado","metric",['contatos','reunioes','propostas','negociacoes','outro'].map(m=>[m,commercialMetric(m)]),'contatos','required')+
+    sf("Quantidade obtida","quantity",0,"number",'required min="0" max="1000000" step="1"')+
+    text("Resultado observado e próximo passo","result","",'required maxlength="3000"')+
+    sel("Lead relacionado (opcional)","lead_id",[],"",'id="commercial-log-lead"')+
+    sf("Link da evidência (opcional)","evidence_url","","url"),
+    body=>{normalizeWork(body);return api('/api/commercial-worklogs','POST',body);},{submit:"Salvar período e resultado"});
+  syncCommercialLead();
+}
+function commercialMonthReview(userId,month,decision){
+  formModal(decision==='approve'?"Aprovar fechamento mensal":"Solicitar ajustes do mês",
+    `<p class="notice full">Competência ${e(longMonth(month))}. ${decision==='approve'?'A aprovação registra R$ 1.500,00 uma única vez no extrato e preserva os períodos do mês. Não há descontos ou adicionais automáticos.':'Descreva o que precisa ser esclarecido nas horas, indicadores ou resultados.'}</p>`+
+    text("Avaliação das horas, indicadores e resultados","feedback","",'required maxlength="3000"'),
+    body=>api('/api/commercial-settlements','POST',{...body,user_id:userId,month,decision}),{submit:decision==='approve'?"Aprovar R$ 1.500,00":"Registrar avaliação"});
+}
+async function commercialVoid(id){
+  formModal("Invalidar período registrado",text("Justificativa da correção","void_reason","",'required maxlength="3000"')+'<p class="tiny muted full">O registro fica no histórico. Após invalidar, a pessoa pode registrar o período corrigido.</p>',
+    body=>api('/api/commercial-worklogs/'+id,'PATCH',body),{submit:"Invalidar período"});
+}
+async function commercialTaskHours(task){
+  const isCommercial=state.users.find(u=>u.id===task.assigned_to)?.role==='comercial'||state.me.role==='comercial'&&task.assigned_to===state.me.id;
+  if(!crmAccess()||!isCommercial)return "";
+  const logs=(await api('/api/commercial-worklogs')).filter(r=>r.task_id===task.id);
+  return card("Horas e resultados desta atividade",`<p><b>${workDuration(sum(logs.filter(r=>!r.voided_at),'work_minutes'))}</b> dedicadas à atividade</p>`+
+    (task.expected_result?`<p class="lead-notes"><b>Resultado esperado:</b> ${e(task.expected_result)}</p>`:"")+commercialLogTable(logs),
+    "Registre os períodos e os avanços. Concluir a atividade continua exigindo evidência.",
+    task.status!=='cancelada'?button("Registrar horas e resultado","commercial-work-new",itemRef(task.id),"small primary"):"");
+}
 async function personalFinancePage() {
   const manager = managesTaskPay();
   const showFollowers = manager || state.me.role === "marketing";
@@ -2764,16 +2859,19 @@ async function personalFinancePage() {
     load("task-payments"), showFollowers ? load("follower-readings") : [],
   ]);
   const month = state.payMonth || today().slice(0, 7);
+  const salaryReports = manager || state.me.role === "comercial"
+    ? await api('/api/commercial-reports?month='+month+(manager&&state.payPerson?'&userId='+encodeURIComponent(state.payPerson):'')) : [];
   const inPerson = row => !manager || !state.payPerson || String(row.assigned_to) === state.payPerson;
   const approved = entries.filter(x => x.month === month && inPerson(x));
   const waiting = pending.filter(inPerson);
   const base = sum(approved.filter(x => x.kind === "base"), "cents");
   const bonus = sum(approved.filter(x => x.kind === "bonus"), "cents");
   const followersBonus = sum(approved.filter(x => x.kind === "followers"), "cents");
-  const paymentType = x => ({base:"Valor base", bonus:"Bônus por atividade", followers:"Bônus por seguidores"})[x.kind];
+  const salary = sum(approved.filter(x=>x.kind === "commercial_monthly"), "cents");
+  const paymentType = x => ({base:"Valor base por atividade", bonus:"Bônus por atividade", followers:"Bônus por seguidores", commercial_monthly:"Remuneração mensal · Comercial"})[x.kind];
   const taskButton = x => x.task_id
     ? button(e(x.title), "task-detail", itemRef(x.task_id), "text-link")
-    : e(x.title) + `<small class="table-sub">${fmt(x.follower_count)} seguidores</small>`;
+    : e(x.title) + (x.kind === "followers" ? `<small class="table-sub">${fmt(x.follower_count)} seguidores</small>` : "");
   const controls = `<div class="daily-controls">
     ${sf("Mês de competência", "pay-month", month, "month", 'id="pay-month"')}
     ${manager ? sel("Pessoa", "pay-person", [["", "Toda a equipe"],
@@ -2784,7 +2882,7 @@ async function personalFinancePage() {
   const statements = card("Extrato de valores aprovados", table(approved, [
     { title: "Registro", key: "title", render: taskButton },
     ...(manager ? [{ title: "Pessoa", key: "assignee_name" }] : []),
-    { title: "Startup", key: "startup_name" },
+    { title: "Startup", key: "startup_name", render:x=>x.kind==='commercial_monthly'?'Todas as startups':e(x.startup_name) },
     { title: "Tipo", key: "kind", render: paymentType },
     { title: "Aprovação", key: "approved_at", render: x => dateTime(x.approved_at) },
     { title: "Valor (R$)", key: "cents", render: x => brl(x.cents) },
@@ -2802,10 +2900,11 @@ async function personalFinancePage() {
     controls + `<div class="kpis">
       ${kpi("Valor base aprovado", brl(base), "Entregas com qualidade aprovada", "circle-check")}
       ${kpi("Bonificações aprovadas", brl(bonus), "Resultados validados", "award")}
-      ${kpi("Total a receber", brl(base + bonus + followersBonus), longMonth(month), "wallet")}
+      ${salaryReports.length ? kpi("Remuneração mensal aprovada", brl(salary),longMonth(month),"wallet") : ""}
+      ${kpi("Total a receber", brl(base + bonus + followersBonus + salary), longMonth(month), "wallet")}
       ${showFollowers ? kpi("Bônus por seguidores", brl(followersBonus), "Aprovado no mês", "award") : ""}
       ${kpi("Atividades pendentes", waiting.length, "Aguardando entrega ou avaliação", "clock-3")}
-    </div>` + statements + (showFollowers ? followerHistory(readings.filter(inPerson), manager) : "") + waitingList;
+    </div>` + salaryReports.map(r=>commercialSummary(r,true)).join('') + statements + (showFollowers ? followerHistory(readings.filter(inPerson), manager) : "") + waitingList;
 }
 
 async function taskForm(record = null, template = null) {
@@ -2854,11 +2953,13 @@ async function taskForm(record = null, template = null) {
       date("Data de execução", "planned_date", v.planned_date) +
       date("Prazo de entrega", "due_date", v.due_date) +
       text("Descrição detalhada", "description", v.description || "") +
+      (crmAccess()?text("Indicador e resultado esperado (Comercial)","expected_result",v.expected_result||"",'maxlength="3000"'):"")+
       text(
         "Checklist · uma etapa por linha",
         "checklist",
         (v.checklist || []).map((x) => x.title).join("\n"),
-      ) + (managesTaskPay() && old?.source !== "story_repost" && (!old || (old.creator_id === "1" && !old.evidence_log?.length && !old.pay_review)) ? payTermFields(v.pay_terms) : ""),
+      ) + (managesTaskPay() && old?.source !== "story_repost" && (!old || (old.creator_id === "1" && !old.evidence_log?.length && !old.pay_review)) ? `<fieldset id="task-variable-pay" data-legacy="${v.pay_terms?'yes':''}">${payTermFields(v.pay_terms)}</fieldset>` : "")+
+      (crmAccess()?'<p id="commercial-task-note" class="notice full">Comercial: registre as horas e os resultados na atividade após salvá-la. Modelo mensal de R$ 1.500 para 20h semanais, avaliado pela Gestão.</p>':""),
     async (b) => {
       if(b.startup_id!==MATERIAL_SPACE)delete b.product_id;
       normalizeWork(b);
@@ -2875,6 +2976,16 @@ async function taskForm(record = null, template = null) {
       submit: old ? "Salvar atividade" : "Criar atividade",
     },
   );
+  syncCommercialTaskPay();
+}
+function syncCommercialTaskPay(){
+  const field=$('#task-variable-pay');
+  const owner=state.users.find(u=>u.id===($('[name="assigned_to"]')?.value||state.me.id));
+  const note=$('#commercial-task-note');
+  if(note)note.hidden=owner?.role!=='comercial';
+  if(!field)return;
+  field.hidden=owner?.role==='comercial'&&field.dataset.legacy!=='yes';
+  field.disabled=field.hidden;
 }
 function historyHTML(events) {
   return events.length
@@ -2985,7 +3096,7 @@ async function taskDetail(id) {
   const t = await api("/api/tasks/" + id);
   if (t.source === "content_reel") return openReelContent(t);
   if (usesPublicationEvidence(t)) return publicationTaskDetail(t);
-  let workSummary="";
+  let workSummary=await commercialTaskHours(t);
   if(t.product_id&&materialAccess()){
     const logs=(await api("/api/material-worklogs")).filter(r=>r.task_id===t.id);
     const rows=workLogRows([t],logs);
@@ -3899,6 +4010,12 @@ document.addEventListener("click", async (ev) => {
       return navigate("tasks");
     }
     if(action==='material-trl')return trlForm(id);
+    if(action==='commercial-work-new')return commercialWorkForm(id);
+    if(action==='commercial-work-void')return commercialVoid(id);
+    if(action==='commercial-month-review')return commercialMonthReview(id,btn.dataset.month,value);
+    if(action==='commercial-work-open'){
+      state.commercialMonth=btn.dataset.month;state.commercialPerson=id;return navigate('commercial-work');
+    }
     if(action==='material-experiment-new')return experimentForm();
     if(action==='material-experiment-detail')return experimentDetail(id);
     if(action==='material-experiment-edit')return experimentForm(id);
@@ -4203,6 +4320,10 @@ const readFile = (file) =>
 document.addEventListener("change", async (ev) => {
   const x = ev.target;
   try {
+    if(x.id==='commercial-month'){state.commercialMonth=x.value;return render();}
+    if(x.id==='commercial-person'&&admin()){state.commercialPerson=x.value;return render();}
+    if(x.id==='commercial-log-task')return syncCommercialLead();
+    if(x.matches?.('[data-owner-field]')&&!x.hasAttribute('data-marketing-owner'))syncCommercialTaskPay();
     if (x.id === "pay-month") {
       state.payMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(x.value) ? x.value : "";
       return render();
@@ -4280,6 +4401,7 @@ document.addEventListener("change", async (ev) => {
           owner.value,
         );
       }
+      syncCommercialTaskPay();
       return;
     }
     if (x.dataset.taskStatus) {

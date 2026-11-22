@@ -1,5 +1,6 @@
 import { materialCollections, developmentRoute, updateReadiness, workInterval, assertNoOverlap } from "./material-development.mjs";
 import { commissionReel, reviewReel, recordFollowers, scheduleReposts } from "./social-media.mjs";
+import { commercialRoute } from "./commercial-work.mjs";
 import { hashPassword, normalizeEmail, validEmail } from "./password.mjs";
 import { validateRoute, validateWrite, InputError, attachmentBytes } from "./validation.mjs";
 
@@ -51,6 +52,9 @@ export function workspaceDomain(snapshot, actorId) {
     });
   const decorate = (name, x) => ({
     ...x,
+    ...(name === "tasks" && users.find(u=>u.id===x.assigned_to)?.role === "comercial" ? {
+      commercial_work_minutes: (db["commercial-worklogs"] || []).filter(r=>r.task_id===x.id&&!r.voided_at).reduce((n,r)=>n+r.work_minutes,0),
+    } : {}),
     product_name: db['material-products'].find(p=>p.id===x.product_id)?.name,
     startup_name: starts.find((s) => s.id === String(x.startup_id))?.name,
     startup: starts.find((s) => s.id === String(x.startup_id))?.name,
@@ -112,6 +116,11 @@ export function workspaceDomain(snapshot, actorId) {
         (!filter || !x.startup_id || x.startup_id === filter) && canSee(collection, x));
       const find = () => db[table]?.find(x => String(x.id) === String(id));
       const canManagePay = isAdmin && me.id === "1";
+      if (["commercial-worklogs", "commercial-reports", "commercial-settlements"].includes(name)) {
+        validateWrite(name, undefined, m, b);
+        const result = commercialRoute({name,id,method:m,body:b,url,db,me,add,now});
+        return respond(result.data,result.status);
+      }
       if (materialCollections.includes(name)) {
         if (!(isAdmin || me.role === "desenvolvimento") || !allowsStartup(MATERIAL_SPACE)) {
           return respond({error:"Área de materiais indisponível."},403);
@@ -222,7 +231,7 @@ export function workspaceDomain(snapshot, actorId) {
       if (name === "task-payments" && m === "GET") {
         if (!canManagePay && !taskPayRoles.includes(me.role))
           return respond({ error: "Extrato indisponível para este perfil." }, 403);
-        const visible = row => (!filter || row.startup_id === filter) &&
+        const visible = row => (!filter || row.startup_id === filter || row.kind === "commercial_monthly") &&
           (canManagePay || row.assigned_to === me.id);
         return respond({
           entries: db.taskPayments.filter(visible).map(x => decorate(name, x)),
@@ -317,7 +326,7 @@ export function workspaceDomain(snapshot, actorId) {
         const allowedWrite = (isSales && ["leads", "deals"].includes(name) && m !== "DELETE")
           || (name === "marketing" && (isSocial || isExternal) && m !== "DELETE")
           || (name === "tasks" && !id && m === "POST" && Object.keys(b).every(k =>
-            ["startup_id", "product_id", "title", "description", "priority", "planned_date", "due_date", "checklist", "work_started_at", "work_ended_at"].includes(k)))
+            ["startup_id", "product_id", "title", "description", "expected_result", "priority", "planned_date", "due_date", "checklist", "work_started_at", "work_ended_at"].includes(k)))
           || (name === "tasks" && id && find() && (p[3] === "comments" || (p[3] === "attachments" && m === "POST")
             || (!p[3] && m === "PATCH" && Object.keys(b).every(k => ["status", "checklist", "evidence"].includes(k)))))
           || (name === "activities" && m === "POST" && String(b.user_id || me.id) === me.id);
@@ -325,6 +334,9 @@ export function workspaceDomain(snapshot, actorId) {
       }
       const existing = id ? find() : null;
       if (id && !existing) return respond({ error: "Registro não encontrado." }, 404);
+      if (name === "tasks" && existing && (db["commercial-worklogs"] || []).some(r=>r.task_id===id) &&
+        (m === "DELETE" || ["assigned_to","startup_id"].some(k=>b[k]&&b[k]!==existing[k])))
+        throw new InputError("Preserve a pessoa e a startup da atividade com horas comerciais registradas.");
       if (name === "tasks" && existing?.source === "content_reel" && ["PATCH", "DELETE"].includes(m))
         throw new InputError("Atualize esta atividade pela ficha do conteúdo em Marketing.");
       if (name !== "history") validateWrite(name, p[3], m, b, existing);
@@ -852,6 +864,8 @@ export function workspaceDomain(snapshot, actorId) {
           const base_cents = cents(b.pay_base), bonus_cents = cents(b.pay_bonus);
           const quality = String(b.pay_quality || "").trim(), result = String(b.pay_result || "").trim();
           const owner = users.find(person => person.id === (data.assigned_to || previous?.assigned_to));
+          if (owner.role === "comercial" && !previous?.pay_terms && (base_cents || bonus_cents))
+            throw new InputError("O Comercial segue a remuneração mensal de R$ 1.500 para 20 horas semanais. Acompanhe em Horas e resultados.");
           if (base_cents && !taskPayRoles.includes(owner?.role))
             throw Error("Atribua a atividade remunerada a um perfil de Comercial, Social Media ou Marketing externo.");
           if (base_cents && !belongsTo(owner.id, data.startup_id || previous?.startup_id))
