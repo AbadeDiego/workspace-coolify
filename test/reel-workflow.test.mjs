@@ -18,7 +18,7 @@ function startupFor(state,user){return state.db.memberships.find(m=>m.user_id===
 
 test('Reel da Gestão: R$100 apenas após qualidade aprovada, sem duplicação ou alteração por outra rota',async()=>{
   const state=model(),startup=startupFor(state,'3');
-  const created=await call(state,'1','marketing','POST',{startup_id:startup,creator_id:'3',title:'Reel de produção',format:'reel',delivery_due:'2026-12-10'});
+  const created=await call(state,'1','marketing','POST',{startup_id:startup,creator_id:'3',title:'Reel de produção',format:'reel',paid_production:'yes',delivery_due:'2026-12-10'});
   assert.equal(created.status,201,JSON.stringify(created.data));
   const piece=created.data,task=state.db.tasks.find(t=>t.id===piece.production_task_id),path='marketing/'+piece.id+'/workflow';
   assert.equal(task.pay_terms.base_cents,10000);
@@ -47,8 +47,8 @@ test('Reel da Gestão: R$100 apenas após qualidade aprovada, sem duplicação o
 
 test('Conteúdo próprio e outros formatos não criam remuneração; Reel externo da Gestão tem R$100',async()=>{
   const state=model();
-  for(const [actor,owner,format,paid] of [['3','3','reel',false],['1','3','post',false],['1','4','reel',true]]){
-    const result=await call(state,actor,'marketing','POST',{startup_id:startupFor(state,owner),creator_id:owner,title:'Conteúdo',format});
+  for(const [actor,owner,format,paid] of [['3','3','reel',false],['1','3','post',false],['1','3','reel',false],['1','4','reel',true]]){
+    const result=await call(state,actor,'marketing','POST',{startup_id:startupFor(state,owner),creator_id:owner,title:'Conteúdo',format,...(paid?{paid_production:'yes'}:{})});
     assert.equal(result.status,201,JSON.stringify(result.data));
     assert.equal(Boolean(result.data.production_task_id),paid);
   }

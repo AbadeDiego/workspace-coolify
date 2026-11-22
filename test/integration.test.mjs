@@ -128,6 +128,16 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   await post("tasks/"+task.id+"/review",{decision:"approve",feedback:"Aprovada"},diego,200);
   assert.equal((await read("task-payments",eduarda)).entries[0].cents,8000);
   assert.equal((await read("task-payments",larissa)).entries.length,0);
+  const flow=await post("tasks",{startup_id:startup,assigned_to:"3",title:"Rotina contínua sem remuneração",execution_mode:"continuo"},diego);
+  const flowBody={request_id:"http-flow-execution",executed_on:date,evidence:{note:"Execução da rotina documentada"}};
+  const recordFlow=()=>fetch(base()+"/api/tasks/"+flow.id+"/executions",{method:"POST",headers:{Origin:origin,Cookie:larissa,"Content-Type":"application/json"},body:JSON.stringify(flowBody)});
+  const concurrentRuns=await Promise.all([recordFlow(),recordFlow()]);
+  assert.deepEqual(concurrentRuns.map(r=>r.status),[200,200]);
+  const recordedRuns=await Promise.all(concurrentRuns.map(r=>r.json()));assert.equal(recordedRuns[0].execution.id,recordedRuns[1].execution.id);
+  assert.equal((await read("tasks/"+flow.id,larissa)).executions.length,1);
+  await post("tasks/"+flow.id+"/executions",{...flowBody,request_id:"http-invalid-execution",evidence:{}},larissa,400);
+  assert.equal((await read("tasks/"+flow.id,larissa)).executions.length,1);
+  await post("tasks/"+flow.id+"/close-flow",{note:"Encerrar"},larissa,403);
 
   const commercialTask=await post("tasks",{startup_id:startup,assigned_to:"2",title:"Retornos comerciais",expected_result:"Avançar os contatos para reunião"},diego);
   const workPeriod={task_id:commercialTask.id,work_started_at:"2026-11-16T08:00:00-03:00",work_ended_at:"2026-11-16T10:00:00-03:00",note:"Retornos aos contatos",metric:"contatos",quantity:4,result:"Contato pediu apresentação; agendar reunião."};
@@ -164,7 +174,7 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   await post("marketing/"+piece.id+"/workflow",{action:"publish",network:"Instagram",account:"@coleta",caption:"Conteúdo",published_at:date+"T15:00:00Z",post_url:"https://example.test/publicacao",reach:"100"},larissa,200);
   assert.equal((await read("marketing",larissa))[0].status,"publicado");
   assert.equal((await read("tasks", larissa)).filter(task => task.source === "story_repost").length, 0);
-  const reel = await post("marketing",{startup_id:startup,creator_id:"3",title:"Reel teste",format:"reel"},diego);
+  const reel = await post("marketing",{startup_id:startup,creator_id:"3",title:"Reel teste",format:"reel",paid_production:"yes"},diego);
   const reelRoute = "marketing/" + reel.id + "/workflow";
   await post(reelRoute, {action:"submit",url:"https://example.test/reel"},larissa,200);
   assert(reel.production_task_id);
@@ -223,6 +233,8 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal((await read("leads",eduarda)).length,93);
   assert.equal((await read("material-goals",vanessa))[0].done,1);
   assert.equal((await read("task-payments",eduarda)).entries.length,1);
+  assert.equal((await read("tasks/"+flow.id,larissa)).status,"em_andamento");
+  assert.equal((await read("tasks/"+flow.id,larissa)).executions.length,1);
   assert.equal((await read("commercial-worklogs",eduarda))[0].id,commercialLog.id);
   const savedPreference=(await read("task-preferences",eduarda)).find(p=>p.task_id===commercialTask.id);
   assert.equal(savedPreference.starred,true);

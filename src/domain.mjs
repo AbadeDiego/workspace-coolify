@@ -1,6 +1,7 @@
 import { materialCollections, developmentRoute, updateReadiness, workInterval, assertNoOverlap } from "./material-development.mjs";
 import { commissionReel, reviewReel, recordFollowers, scheduleReposts } from "./social-media.mjs";
 import { commercialRoute } from "./commercial-work.mjs";
+import { continuousTask, continuousAction } from "./continuous-tasks.mjs";
 import { hashPassword, normalizeEmail, validEmail } from "./password.mjs";
 import { validateRoute, validateWrite, InputError, attachmentBytes } from "./validation.mjs";
 
@@ -116,6 +117,15 @@ export function workspaceDomain(snapshot, actorId) {
         (!filter || !x.startup_id || x.startup_id === filter) && canSee(collection, x));
       const find = () => db[table]?.find(x => String(x.id) === String(id));
       const canManagePay = isAdmin && me.id === "1";
+      if(name==='tasks'&&id&&['executions','close-flow'].includes(p[3])){
+        const task=find();
+        if(!canSee('tasks',task))return respond({error:'Atividade fora do escopo deste perfil.'},403);
+        validateWrite(name,p[3],m,b,task);
+        const result=await continuousAction({task,action:p[3],body:b,db,me,isAdmin,add,record,now,
+          complete:(childId,evidence)=>handle('/api/tasks/'+childId,'PATCH',{status:'concluida',evidence})});
+        if(result.response)return result.response;
+        return respond({task:decorate('tasks',result.task),...(result.execution?{execution:decorate('tasks',result.execution)}:{})});
+      }
       if (name === "task-preferences") {
         const preferences = db["task-preferences"] ||= [];
         if (m === "GET") return respond(preferences.filter(row=>row.user_id===me.id&&canSee("tasks",tasks.find(t=>t.id===row.task_id))));
@@ -246,18 +256,19 @@ export function workspaceDomain(snapshot, actorId) {
           (canManagePay || row.assigned_to === me.id);
         return respond({
           entries: db.taskPayments.filter(visible).map(x => decorate(name, x)),
-          pending: tasks.filter(x => visible(x) && x.pay_terms &&
+          pending: tasks.filter(x => visible(x) && x.pay_terms && !continuousTask(x) &&
             x.status !== "cancelada" && x.pay_review?.status !== "approved").map(x => decorate("tasks", x)),
         });
       }
       if (name === "tasks" && id && p[3] === "review" && m === "POST") {
         if (!canManagePay) return respond({ error: "A avaliação cabe à Gestão." }, 403);
         const task = find();
+        if(continuousTask(task))throw new InputError('Avalie cada execução do fluxo, não a atividade principal.');
         if (task?.source === "content_reel") throw new InputError("Avalie a versão na ficha do conteúdo em Marketing.");
         if (!task?.pay_terms || task.status !== "concluida" || !task.evidence_log?.length)
           throw Error("Aguarde a entrega com evidência para avaliar.");
         const existing = db.taskPayments.filter(x => x.task_id === id);
-        const approved = existing.some(x => x.kind === "base");
+        const approved = task.pay_review?.status === "approved" || existing.some(x => x.kind === "base");
         if (!["changes", "approve", "bonus"].includes(b.decision) || (b.decision === "bonus") !== approved)
           throw Error("Ação indisponível para esta avaliação.");
         const feedback = String(b.feedback || "").trim();
@@ -285,7 +296,7 @@ export function workspaceDomain(snapshot, actorId) {
           task_id: id, title: task.title, startup_id: task.startup_id,
           assigned_to: task.assigned_to, kind, cents, month, approved_at: reviewedAt,
         });
-        if (b.decision === "approve") addEntry("base", task.pay_terms.base_cents);
+        if (b.decision === "approve" && task.pay_terms.base_cents) addEntry("base", task.pay_terms.base_cents);
         if (award) addEntry("bonus", task.pay_terms.bonus_cents);
         if (b.decision !== "bonus") task.pay_review = review;
         if (award) task.bonus_review = review;
@@ -337,7 +348,7 @@ export function workspaceDomain(snapshot, actorId) {
         const allowedWrite = (isSales && ["leads", "deals"].includes(name) && m !== "DELETE")
           || (name === "marketing" && (isSocial || isExternal) && m !== "DELETE")
           || (name === "tasks" && !id && m === "POST" && Object.keys(b).every(k =>
-            ["startup_id", "product_id", "title", "description", "expected_result", "priority", "planned_date", "due_date", "checklist", "work_started_at", "work_ended_at"].includes(k)))
+            ["startup_id", "product_id", "title", "description", "expected_result", "execution_mode", "priority", "planned_date", "due_date", "checklist", "work_started_at", "work_ended_at"].includes(k)))
           || (name === "tasks" && id && find() && (p[3] === "comments" || (p[3] === "attachments" && m === "POST")
             || (!p[3] && m === "PATCH" && Object.keys(b).every(k => ["status", "checklist", "evidence"].includes(k)))))
           || (name === "activities" && m === "POST" && String(b.user_id || me.id) === me.id);
@@ -345,6 +356,12 @@ export function workspaceDomain(snapshot, actorId) {
       }
       const existing = id ? find() : null;
       if (id && !existing) return respond({ error: "Registro não encontrado." }, 404);
+      if(name==='tasks'&&existing?.parent_task_id&&(m==='DELETE'||
+        ['startup_id','assigned_to','execution_mode','pay_enabled','pay_base','pay_bonus','pay_quality','pay_result'].some(k=>k in b)))
+        throw new InputError('Preserve os dados e valores da execução registrada.');
+      if(name==='tasks'&&existing&&tasks.some(t=>t.parent_task_id===id)&&(m==='DELETE'||
+        ['startup_id','assigned_to','execution_mode'].some(k=>b[k]&&b[k]!==existing[k])))
+        throw new InputError('O fluxo possui execuções. Preserve a pessoa, a startup e o tipo de atividade.');
       if (name === "tasks" && existing && (db["commercial-worklogs"] || []).some(r=>r.task_id===id) &&
         (m === "DELETE" || ["assigned_to","startup_id"].some(k=>b[k]&&b[k]!==existing[k])))
         throw new InputError("Preserve a pessoa e a startup da atividade com horas comerciais registradas.");
@@ -480,6 +497,7 @@ export function workspaceDomain(snapshot, actorId) {
         const x = find();
         return respond({
           ...decorate(name, x),
+          ...(continuousTask(x)?{executions:tasks.filter(t=>t.parent_task_id===id).map(t=>decorate('tasks',t))}:{}),
           comments: comments.filter((x) => x.task_id === id),
           attachments: db.attachments
             .filter((x) => x.task_id === id)
@@ -737,6 +755,8 @@ export function workspaceDomain(snapshot, actorId) {
       }
       if (name === "marketing") {
         const piece = find();
+        if(b.paid_production!==undefined&&(piece||!canManagePay))throw new InputError('Diego define a remuneração opcional ao criar o conteúdo.');
+        if(b.paid_production==='yes'&&b.format!=='reel')throw new InputError('O valor opcional de R$ 100 se aplica à produção de um Reel.');
         if (p[3] === "workflow" && m === "POST") {
           if (!piece) throw Error("Conteúdo indisponível.");
           const versions = piece.versions || [];
@@ -802,6 +822,7 @@ export function workspaceDomain(snapshot, actorId) {
         if (!creator || !["admin", "marketing", "marketing_externo"].includes(creator.role) ||
           (creator.role !== "admin" && !belongsTo(creator.id, startup)))
           throw Error("Selecione um responsável de marketing vinculado à startup.");
+        if(b.paid_production==='yes'&&!['marketing','marketing_externo'].includes(creator.role))throw new InputError('Atribua a produção remunerada a Social Media ou Marketing externo.');
         if (piece) delete data.startup_id;
         if (!startup || !starts.some(s => s.id === startup)) throw Error("Selecione a startup.");
         data.workflow = piece?.workflow || "planejamento";
@@ -837,6 +858,15 @@ export function workspaceDomain(snapshot, actorId) {
         if (!owner || (owner.role !== "admin" && !belongsTo(owner.id, startupId))) {
           throw new InputError("Selecione um responsável vinculado à startup.");
         }
+        const mode=data.execution_mode||previous?.execution_mode||'pontual';
+        if(data.execution_mode==='continuo'&&!previous&&!['admin','marketing','marketing_externo'].includes(me.role))throw new InputError('A Gestão e os perfis de Marketing podem criar fluxos contínuos.',403);
+        if(previous&&data.execution_mode&&data.execution_mode!==(previous.execution_mode||'pontual')&&(previous.evidence_log?.length||previous.pay_review))throw new InputError('Preserve o tipo da atividade que já teve entrega registrada.');
+        if(mode==='continuo'&&data.status==='concluida'&&previous?.status!=='concluida')throw new InputError('Registre uma execução ou use Encerrar fluxo.');
+        if(previous?.flow_closed_at&&data.status&&data.status!==previous.status)throw new InputError('O fluxo foi encerrado. Crie uma nova atividade para retomar o trabalho.');
+        if(mode==='continuo'&&previous&&data.status&&!isAdmin&&previous.creator_id!==me.id&&
+          (data.status==='cancelada'||previous.status==='cancelada'&&data.status!==previous.status))
+          throw new InputError('A Gestão ou quem criou a atividade pode cancelar ou retomar este fluxo.',403);
+        if(!previous&&mode==='continuo'&&(!data.status||data.status==='pendente'))data.status='em_andamento';
         const hasWork = b.work_started_at || b.work_ended_at;
         delete data.work_started_at;
         delete data.work_ended_at;
@@ -851,8 +881,8 @@ export function workspaceDomain(snapshot, actorId) {
         delete data.pay_review;
         delete data.pay_review_log;
         delete data.bonus_review;
-        for (const field of ["pay_base", "pay_bonus", "pay_quality", "pay_result"]) delete data[field];
-        const updatesTerms = ["pay_base", "pay_bonus", "pay_quality", "pay_result"].some(field => field in b);
+        for (const field of ["pay_enabled", "pay_base", "pay_bonus", "pay_quality", "pay_result"]) delete data[field];
+        const updatesTerms = ["pay_enabled", "pay_base", "pay_bonus", "pay_quality", "pay_result"].some(field => field in b);
         const payLocked = previous?.evidence_log?.length || previous?.pay_review;
         const paid = previous?.pay_review?.status === "approved";
         if (paid && ((data.status && data.status !== "concluida") ||
@@ -872,18 +902,19 @@ export function workspaceDomain(snapshot, actorId) {
             if (!/^\d{1,9}(?:[.,]\d{1,2})?$/.test(text)) throw Error("Informe um valor em reais com até duas casas decimais.");
             return Math.round(Number(text.replace(",", ".")) * 100);
           };
-          const base_cents = cents(b.pay_base), bonus_cents = cents(b.pay_bonus);
+          const base_cents = b.pay_enabled==='no'?0:cents(b.pay_base), bonus_cents = b.pay_enabled==='no'?0:cents(b.pay_bonus);
           const quality = String(b.pay_quality || "").trim(), result = String(b.pay_result || "").trim();
           const owner = users.find(person => person.id === (data.assigned_to || previous?.assigned_to));
           if (owner.role === "comercial" && !previous?.pay_terms && (base_cents || bonus_cents))
             throw new InputError("O Comercial segue a remuneração mensal de R$ 1.500 para 20 horas semanais. Acompanhe em Horas e resultados.");
-          if (base_cents && !taskPayRoles.includes(owner?.role))
+          if ((base_cents||bonus_cents) && !taskPayRoles.includes(owner?.role))
             throw Error("Atribua a atividade remunerada a um perfil de Comercial, Social Media ou Marketing externo.");
-          if (base_cents && !belongsTo(owner.id, data.startup_id || previous?.startup_id))
+          if ((base_cents||bonus_cents) && !belongsTo(owner.id, data.startup_id || previous?.startup_id))
             throw Error("O responsável precisa estar vinculado à startup da atividade.");
-          if ((base_cents && !quality) || (bonus_cents && (!base_cents || !result)))
+          if (((base_cents||bonus_cents) && !quality) || (bonus_cents && !result))
             throw Error("Informe o critério de qualidade e, para a bonificação, o resultado esperado.");
-          data.pay_terms = base_cents ? { base_cents, bonus_cents, quality, result } : null;
+          if(b.pay_enabled==='yes'&&!base_cents&&!bonus_cents)throw new InputError('Informe um valor base ou uma bonificação, ou desmarque a remuneração.');
+          data.pay_terms = base_cents||bonus_cents ? { base_cents, bonus_cents, quality, result } : null;
         } else if (previous?.pay_terms && ["startup_id", "assigned_to"].some(field => data[field] && data[field] !== previous[field])) {
           throw Error("Revise a remuneração ao mudar o responsável ou a startup.");
         }

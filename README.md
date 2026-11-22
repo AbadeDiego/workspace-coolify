@@ -64,7 +64,7 @@ Ao criar uma atividade do material, os campos opcionais **Início do trabalho** 
 
 ## Reels e agenda de Stories
 
-Em **Marketing → Novo conteúdo**, novos Reels criados por Diego para Social Media ou Marketing externo geram uma atividade de produção de **R$ 100,00**. O envio de uma versão registra a entrega para avaliação. Solicitar ajustes mantém o valor pendente; aprovar a versão libera o valor uma única vez no extrato da pessoa responsável, no mês da aprovação. A ficha de conteúdo concentra envio, revisão e aprovação. Conteúdos próprios, outros formatos, contratos e pagamentos anteriores mantêm suas condições.
+Em **Marketing → Novo conteúdo**, Diego pode marcar **Remunerar a produção com R$ 100,00** ao criar um Reel para Social Media ou Marketing externo. Essa opção gera a atividade de produção remunerada. Sem marcar, o conteúdo é criado sem remuneração. O envio de uma versão registra a entrega para avaliação. Solicitar ajustes mantém o valor pendente; aprovar a versão libera o valor uma única vez no extrato da pessoa responsável, no mês da aprovação. A ficha de conteúdo concentra envio, revisão e aprovação. Conteúdos próprios, outros formatos, contratos e pagamentos anteriores mantêm suas condições.
 
 Ao registrar a publicação de um Reel no Instagram, a plataforma gera atividades **sem remuneração** para compartilhar o vídeo nos Stories em **1, 3, 7, 14, 21 e 28 dias**, com sugestões de apresentação, pergunta, dica, bastidores, conversa e recapitulação. Datas em Brasília; colisões de repostagens automáticas da mesma conta são deslocadas para o próximo dia livre. Publicações antigas registradas agora começam a agenda a partir de hoje. O horário deve seguir os Insights da conta. As tarefas aparecem em Marketing, no calendário editorial e nas atividades diárias, com conclusão por evidência.
 
@@ -97,3 +97,13 @@ Em telas de até 700 px, **Visão Geral** prioriza os quatro indicadores princip
 **Metas** usa cartões com progresso, alvo, unidade, pessoa e ciclo, além de busca, filtros por situação/pessoa e ordenação por prazo, progresso ou título. No celular, metas atingidas e inativas ficam recolhidas quando a seleção é “Todas”. Ao abrir uma meta, o detalhe apresenta os resultados vinculados ao ciclo, permite iniciar o registro com a meta selecionada e mantém o ajuste de alvo restrito à Gestão. O filtro geral de período altera o histórico de resultados; o progresso continua usando o ciclo próprio da meta e a contribuição da startup selecionada.
 
 Vanessa usa os mesmos componentes em Visão Geral e Metas, preservando produto, unidade, período e evidências de cada resultado. O TRL e seu histórico ficam acessíveis em seção expansível no celular. Experimentos, registros de trabalho e a navegação por materiais continuam disponíveis. As mudanças são de interface; não modificam APIs, consultas, regras de cálculo ou permissões.
+
+## Fluxo contínuo e valores opcionais
+
+Na criação de atividades, Gestão e Marketing (incluindo Marketing externo) podem escolher **Pontual** ou **Fluxo contínuo**. No fluxo contínuo, **Registrar execução** solicita a data e a evidência do trabalho. A atividade principal permanece ativa e cada execução fica registrada no histórico, com acesso às evidências e à avaliação. Não há geração de recorrências por calendário. A Gestão ou quem criou a atividade pode encerrar o fluxo com justificativa. A pessoa, a startup e o tipo do fluxo ficam preservados após o primeiro registro.
+
+**Vincular remuneração ou bonificação** é uma opção desmarcada por padrão nas atividades novas da Gestão. Diego pode definir um valor base, somente uma bonificação por resultado, ou ambos. Se a opção não for marcada, a atividade não gera valor financeiro. Marketing cria atividades próprias sem poder atribuir pagamento a si. As regras mensais do Comercial e as repostagens gratuitas continuam preservadas.
+
+Em um fluxo com valores, cada execução recebe uma cópia das condições vigentes naquele momento. O valor base depende da aprovação de qualidade e a bonificação exige resultado comprovado. Alterar as condições das próximas execuções não modifica entregas já registradas. A atividade principal não entra na previsão de pagamentos; somente as execuções entregues são avaliadas. Repetir o envio do mesmo formulário não cria duas execuções nem dois pagamentos.
+
+Novos Reels só geram o valor de R$ 100 quando Diego marca a remuneração opcional ao criar a demanda. Contratações e pagamentos existentes são preservados.

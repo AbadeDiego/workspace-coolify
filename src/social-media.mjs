@@ -22,7 +22,7 @@ const addDays = (day, days) => {
 // Production payment follows content approval, never the number of reposts.
 export function commissionReel(piece, actor, users, add) {
   const owner = users.find(user => user.id === piece.creator_id);
-  if (actor.id !== "1" || piece.format !== "reel" ||
+  if (piece.paid_production !== 'yes' || actor.id !== "1" || piece.format !== "reel" ||
     !["marketing", "marketing_externo"].includes(owner?.role)) return;
   const task = add("tasks", {
     startup_id: piece.startup_id, assigned_to: owner.id, creator_id: actor.id,

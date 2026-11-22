@@ -12,7 +12,7 @@ const collections = {
   "task-preferences": "task_id starred",
   "follower-readings": "startup_id assigned_to account followers evidence_url",
   users: "name email role active job_title responsibilities avatar_url password",
-  tasks: "startup_id product_id assigned_to title description expected_result priority status planned_date due_date checklist evidence work_started_at work_ended_at pay_base pay_bonus pay_quality pay_result",
+  tasks: "startup_id product_id assigned_to title description expected_result execution_mode priority status planned_date due_date checklist evidence work_started_at work_ended_at pay_enabled pay_base pay_bonus pay_quality pay_result",
   "commercial-worklogs": "task_id work_started_at work_ended_at note result metric quantity evidence_url lead_id void_reason",
   "commercial-settlements": "user_id month decision feedback",
   leads: "startup_id owner_id name company phone email city segment origin campaign_name public_body stakeholders documents_due documents_notes estimated_value next_contact_at meeting_at notes stage proposal",
@@ -20,7 +20,7 @@ const collections = {
   finance: "startup_id entry_type description amount expense_class status category cost_center entry_date due_date competence_date",
   goals: "user_id title metric target cadence start_date end_date active",
   activities: "startup_id user_id goal_id metric quantity note",
-  marketing: "startup_id creator_id title campaign format delivery_due planned_date notes production_started",
+  marketing: "startup_id creator_id title campaign format delivery_due planned_date notes production_started paid_production",
   technology: "startup_id kind title responsible priority status due_date progress version notes",
   templates: "title sector startup_id steps",
   plans: "template_id startup_id owner_id title due_date",
@@ -46,7 +46,7 @@ export function validateRoute(parts, method) {
     if (subId) return false;
     if (name === "leads" && action === "events") return ["GET", "POST"].includes(method);
     return method === "POST" && (
-      (name === "tasks" && ["comments", "review"].includes(action)) ||
+      (name === "tasks" && ["comments", "review", "executions", "close-flow"].includes(action)) ||
       (name === "marketing" && action === "workflow") ||
       (name === "invoices" && action === "payments")
     );
@@ -63,6 +63,8 @@ export function validateRoute(parts, method) {
 }
 
 const extraFields = {
+  executions: "request_id executed_on evidence",
+  "close-flow": "note",
   attachments: "name mime_type data",
   comments: "content",
   review: "decision feedback award_bonus metric measurement result result_url",
@@ -136,6 +138,9 @@ export function validateWrite(name, action, method, body, previous) {
     if (typeof value !== "string" || !value.trim() || value.length > max) throw new InputError("Preencha " + key + ".");
   };
   const status = statuses[action || name];
+  if(body.execution_mode!==undefined)select(body.execution_mode,['pontual','continuo'],'tipo de atividade');
+  if(body.pay_enabled!==undefined)select(body.pay_enabled,['yes','no'],'remuneração opcional');
+  if(body.paid_production!==undefined)select(body.paid_production,['yes','no'],'remuneração do Reel');
   if (body.expected_result !== undefined && (typeof body.expected_result !== "string" || body.expected_result.length > 3000))
     throw new InputError("Descreva o resultado esperado em até 3.000 caracteres.");
   if (status && body.status !== undefined) select(body.status, status, "status");

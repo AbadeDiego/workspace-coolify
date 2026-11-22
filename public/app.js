@@ -1197,11 +1197,11 @@ function activityRow(task, preferences, day, showOwner) {
   const starred=Boolean(preferences[task.id]?.starred),done=task.status==='concluida',cancelled=task.status==='cancelada';
   const meta=[task.product_name||task.startup_name||startupName(task.startup_id),showOwner?personName(task.assigned_to,task.assignee_name):''].filter(Boolean).join(' · ');
   return `<li class="activity-row ${done?'is-complete':''}" data-activity-id="${e(task.id)}">
-    ${button(icon(done?'circle-check':cancelled?'circle-minus':'circle'),done||cancelled?'task-detail':'task-status',itemRef(task.id)+` data-value="concluida" aria-label="${done?'Ver entrega de':cancelled?'Ver atividade cancelada':task.source==='content_reel'?'Abrir produção de':'Concluir com evidência:'} ${e(task.title)}"`,'activity-check')}
+    ${button(icon(done?'circle-check':cancelled?'circle-minus':'circle'),done||cancelled?'task-detail':'task-status',itemRef(task.id)+` data-value="concluida" aria-label="${done?'Ver entrega de':cancelled?'Ver atividade cancelada':task.execution_mode==='continuo'?'Registrar execução de':task.source==='content_reel'?'Abrir produção de':'Concluir com evidência:'} ${e(task.title)}"`,'activity-check')}
     <div class="activity-copy">${button(e(task.title),'task-detail',itemRef(task.id),'activity-title')}
       ${task.description?`<p class="activity-description">${e(task.description)}</p>`:''}
       <p class="activity-context">${e(meta)}</p>
-      <div class="activity-meta">${activityDate(task,day)}${['urgente','alta'].includes(task.priority)&&openTask(task)?priority(task.priority):''}${['em_andamento','bloqueada'].includes(task.status)?`<span class="activity-status">${e(label(task.status))}</span>`:''}${task.commercial_work_minutes?`<span class="activity-status">${workDuration(task.commercial_work_minutes)} de trabalho</span>`:''}</div>
+      <div class="activity-meta">${activityDate(task,day)}${task.execution_mode==='continuo'?badge('Fluxo contínuo','blue'):''}${['urgente','alta'].includes(task.priority)&&openTask(task)?priority(task.priority):''}${['em_andamento','bloqueada'].includes(task.status)?`<span class="activity-status">${e(label(task.status))}</span>`:''}${task.commercial_work_minutes?`<span class="activity-status">${workDuration(task.commercial_work_minutes)} de trabalho</span>`:''}</div>
     </div>
     ${button(icon('star'),'activity-star',itemRef(task.id)+` aria-label="${starred?'Remover destaque de':'Destacar'} ${e(task.title)}" aria-pressed="${starred}"`,'activity-star '+(starred?'is-starred':''))}
   </li>`;
@@ -1306,7 +1306,7 @@ function workTaskList(rows, day, mode, showOwner) {
         </div>
       </div>
       <div class="daily-actions">${admin() && mode !== "completed" ? edit : ""}${active
-        ? (task.status === "pendente" ? update("Iniciar", "em_andamento") : "") + update("Concluir", "concluida", "small primary")
+        ? (task.status === "pendente" ? update("Iniciar", "em_andamento") : "") + update(task.execution_mode==="continuo"?"Registrar execução":"Concluir", "concluida", "small primary")
         : ""}</div>
     </li>`;
   }).join("")}</${active ? "ol" : "ul"}>`;
@@ -2816,15 +2816,21 @@ const parseChecklist = (value, old = []) =>
     }));
 const payAmount = cents => cents ? (cents / 100).toFixed(2) : "";
 function payTermFields(terms) {
-  return `<fieldset class="pay-fields">
-    <legend>Remuneração da atividade</legend>
+  return `<label class="checklist-row full"><input type="checkbox" id="task-pay-enabled" ${terms?'checked':''}> Vincular remuneração ou bonificação (opcional)</label>
+  <fieldset id="task-pay-inputs" class="pay-fields" ${terms?'':'hidden disabled'}>
+    <legend>Valores definidos pela Gestão</legend>
+    <p class="tiny muted">Informe um valor base, somente uma bonificação por resultado, ou ambos. Sem marcar a opção, a atividade não gera valores a receber. Em fluxo contínuo, os valores se aplicam a cada execução aprovada.</p>
     <div class="grid2">
-      ${sf("Valor base (R$)", "pay_base", payAmount(terms?.base_cents), "number", 'min="0" step="0.01"')}
-      ${sf("Bonificação prevista (R$)", "pay_bonus", payAmount(terms?.bonus_cents), "number", 'min="0" step="0.01"')}
+      ${sf("Valor base (R$) · opcional", "pay_base", payAmount(terms?.base_cents), "number", 'min="0" step="0.01"')}
+      ${sf("Bonificação (R$) · opcional", "pay_bonus", payAmount(terms?.bonus_cents), "number", 'min="0" step="0.01"')}
     </div>
     ${text("Critério de qualidade para aprovar a entrega", "pay_quality", terms?.quality || "", 'maxlength="3000"')}
     ${text("Resultado esperado para bonificar", "pay_result", terms?.result || "", 'maxlength="3000"')}
   </fieldset>`;
+}
+function syncOptionalPay(){
+  const enabled=$('#task-pay-enabled'),fields=$('#task-pay-inputs');
+  if(enabled&&fields){fields.hidden=!enabled.checked;fields.disabled=!enabled.checked;}
 }
 function taskPayStatus(task) {
   if (task.pay_review?.status === "approved") return "Qualidade aprovada";
@@ -2836,6 +2842,7 @@ function taskPayStatus(task) {
 function taskPaySummary(task) {
   const terms = task.pay_terms;
   if (!terms) return "";
+  if(task.execution_mode==='continuo')return `<div class="notice"><b>Condições por execução</b><p>${terms.base_cents?'Valor base '+brl(terms.base_cents):'Sem valor base'}${terms.bonus_cents?' · Bonificação opcional '+brl(terms.bonus_cents):''}</p><p>${e(terms.quality)}</p>${terms.result?'<p>Resultado para bonificar: '+e(terms.result)+'</p>':''}<p>A atividade principal não gera pagamento. Cada execução entregue será avaliada por Diego.</p></div>`;
   const review = task.pay_review;
   const bonus = task.bonus_review;
   const eligible = task.source !== "content_reel" && managesTaskPay() && task.status === "concluida" && task.evidence_log?.length;
@@ -2843,7 +2850,7 @@ function taskPaySummary(task) {
   return `<div class="section-label">REMUNERAÇÃO E QUALIDADE</div>
     <div class="workflow-stack">
       <div class="workflow-item">${badge(taskPayStatus(task), review?.status === "approved" ? "ok" : "warn")}
-        <p>Valor base ${brl(terms.base_cents)}${terms.bonus_cents ? " · Bonificação prevista " + brl(terms.bonus_cents) : ""}</p>
+        <p>${terms.base_cents?'Valor base '+brl(terms.base_cents):'Sem valor base'}${terms.bonus_cents ? " · Bonificação prevista " + brl(terms.bonus_cents) : ""}</p>
         <p><b>Critério de qualidade</b> · ${e(terms.quality)}</p>
         ${terms.result ? `<p><b>Resultado esperado</b> · ${e(terms.result)}</p>` : ""}
       </div>
@@ -3036,7 +3043,7 @@ async function personalFinancePage() {
   ], "pay-statement"), "A competência é o mês da aprovação. O extrato soma os valores a receber.");
   const waitingList = card("Atividades sem aprovação", workflowList(waiting.map(x => ({
     id: x.id, title: x.title, action: "task-detail",
-    note: [x.startup_name, manager && x.assignee_name, taskPayStatus(x), "Valor previsto " + brl(x.pay_terms.base_cents)].filter(Boolean).join(" · "),
+    note: [x.startup_name, manager && x.assignee_name, taskPayStatus(x), x.pay_terms.base_cents?"Valor base previsto " + brl(x.pay_terms.base_cents):"Sem valor base",x.pay_terms.bonus_cents?"Bonificação prevista "+brl(x.pay_terms.bonus_cents):""].filter(Boolean).join(" · "),
   })), "Nenhuma atividade aguardando entrega ou avaliação"), "Pendências atuais de todos os meses, fora do total a receber.");
   
   return intro(manager ? "Remuneração da equipe" : "Finanças pessoais",
@@ -3084,6 +3091,9 @@ async function taskForm(record = null, template = null) {
       (admin() ? ownerField(v.assigned_to, v.startup_id)
         : `<div class="notice full">Responsável · ${e(state.me.name)}</div>`) +
       sf("Título", "title", v.title, "text", 'required maxlength="200"') +
+      (["admin","marketing","marketing_externo"].includes(state.me.role)?sel('Tipo de atividade','execution_mode',[
+        ['pontual','Pontual · uma entrega'],['continuo','Fluxo contínuo · várias execuções']],v.execution_mode||'pontual',old?.executions?.length||old?.parent_task_id?'disabled':'')+
+        '<p class="tiny muted full">No fluxo contínuo, registre cada execução com evidência. A atividade permanece ativa até ser encerrada; não há criação automática de tarefas por calendário.</p>':'')+
       sel(
         "Prioridade",
         "priority",
@@ -3095,7 +3105,7 @@ async function taskForm(record = null, template = null) {
           .map(x => [x, label(x)]), v.status) : "") +
       (!old&&materialAccess()?`<fieldset id="material-work-fields" class="pay-fields" ${v.startup_id===MATERIAL_SPACE?"":"hidden disabled"}><legend>Trabalho já realizado (opcional)</legend>${workFields()}</fieldset>`:"") +
       date("Data de execução", "planned_date", v.planned_date) +
-      date("Prazo de entrega", "due_date", v.due_date) +
+      date("Prazo de entrega ou revisão (opcional)", "due_date", v.due_date) +
       text("Descrição detalhada", "description", v.description || "") +
       (crmAccess()?text("Indicador e resultado esperado (Comercial)","expected_result",v.expected_result||"",'maxlength="3000"'):"")+
       text(
@@ -3105,6 +3115,11 @@ async function taskForm(record = null, template = null) {
       ) + (managesTaskPay() && old?.source !== "story_repost" && (!old || (old.creator_id === "1" && !old.evidence_log?.length && !old.pay_review)) ? `<fieldset id="task-variable-pay" data-legacy="${v.pay_terms?'yes':''}">${payTermFields(v.pay_terms)}</fieldset>` : "")+
       (crmAccess()?'<p id="commercial-task-note" class="notice full">Comercial: registre as horas e os resultados na atividade após salvá-la. Modelo mensal de R$ 1.500 para 20h semanais, avaliado pela Gestão.</p>':""),
     async (b) => {
+      const pay=$('#task-pay-enabled'),payWrapper=$('#task-variable-pay');
+      if(pay&&payWrapper&&!payWrapper.disabled){
+        b.pay_enabled=pay.checked?'yes':'no';
+        if(!pay.checked)for(const key of ['pay_base','pay_bonus','pay_quality','pay_result'])delete b[key];
+      }
       if(b.startup_id!==MATERIAL_SPACE)delete b.product_id;
       normalizeWork(b);
       b.checklist = parseChecklist(b.checklist, v.checklist);
@@ -3115,12 +3130,13 @@ async function taskForm(record = null, template = null) {
       );
     },
     {
-      remove: old && !(old.pay_terms && old.evidence_log?.length) ? "task-delete" : null,
+      remove: old && !old.parent_task_id && !old.executions?.length && !(old.pay_terms && old.evidence_log?.length) ? "task-delete" : null,
       id: old?.id,
       submit: old ? "Salvar atividade" : "Criar atividade",
     },
   );
   syncCommercialTaskPay();
+  syncOptionalPay();
 }
 function syncCommercialTaskPay(){
   const field=$('#task-variable-pay');
@@ -3198,9 +3214,49 @@ function publicationTaskDetail(task) {
     </div>`);
 }
 
+async function continuousTaskDetail(task){
+  const runs=[...(task.executions||[])].sort((a,b)=>String(b.executed_on||b.created_at).localeCompare(String(a.executed_on||a.created_at)));
+  const active=!['concluida','cancelada'].includes(task.status);
+  dialog(task.title,`<div class="detail-summary">${badge('Fluxo contínuo','blue')}${badge(task.status)}${badge(startupName(task.startup_id))}${priority(task.priority)}</div>
+    <p class="detail-description">${e(task.description||'Registre cada execução e acompanhe o histórico da atividade.')}</p>
+    <p class="tiny muted">${runs.length} execuções registradas. O fluxo permanece ativo entre as entregas.</p>
+    ${taskPaySummary(task)||'<p class="notice">Sem remuneração ou bonificação vinculada.</p>'}${await commercialTaskHours(task)}
+    <div class="workflow-actions">${active?button('Registrar execução','flow-execute',itemRef(task.id),'primary'):''}${active&&(admin()||task.creator_id===state.me.id)?button('Encerrar fluxo','flow-close',itemRef(task.id),'small'):''}${admin()?button('Editar atividade','task-edit',itemRef(task.id),'small'):''}</div>
+    ${task.flow_closure?'<p class="notice"><b>Fluxo encerrado</b><br>'+e(task.flow_closure.note)+'<br>'+e(task.flow_closure.author)+' · '+dateTime(task.flow_closure.created_at)+'</p>':''}
+    <h3 class="insight-history-title">Histórico de execuções</h3>`+
+    (runs.length?runs.map(run=>`<article class="insight-result-row"><div class="between"><b>${human(run.executed_on)}</b>${badge(run.status)}</div><p>${e((run.evidence_log||[]).at(-1)?.note||'Evidência registrada na execução.')}</p>${run.pay_terms?'<p>'+e(taskPayStatus(run))+'</p>':''}${button('Abrir execução e evidências','task-detail',itemRef(run.id),'text-link')}</article>`).join(''):empty('Nenhuma execução registrada','Use Registrar execução para documentar o primeiro avanço.','repeat')));
+}
+async function continuousExecutionForm(id){
+  const task=await api('/api/tasks/'+id);
+  if(['concluida','cancelada'].includes(task.status))return continuousTaskDetail(task);
+  const requestId=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+  const publication=usesPublicationEvidence(task);
+  formModal('Registrar execução do fluxo',
+    `<p class="notice full"><b>${e(task.title)}</b><br>O registro mantém a atividade ativa.${task.pay_terms?' Os valores desta execução dependerão da avaliação de Diego.':' Esta execução não gera remuneração.'}</p>`+
+    date(publication?'Dia da publicação':'Data da execução','executed_on',today(),`required max="${today()}"`)+
+    text('O que foi realizado','note','','maxlength="3000"')+
+    sf(publication?'Link da publicação':'Link da evidência (opcional)','url','','url',publication?'required':'')+
+    (!publication?'<label>Arquivo da evidência · até 1 MB<input type="file" id="flow-evidence-file"></label>':'')+
+    (task.pay_terms?.bonus_cents?text('Resultado observado (se houver)','result','','maxlength="3000"'):'')+
+    `<p class="tiny muted full">${publication?'Informe a data e o link da publicação.':'Inclua uma descrição, link ou arquivo como evidência.'} Não é um lançamento automático de pagamento.</p>`,
+    async body=>{
+      const file=$('#flow-evidence-file')?.files?.[0];
+      if(file?.size>1048576)throw Error('Use um arquivo de até 1 MB ou informe um link.');
+      const evidence={note:body.note,url:body.url,result:body.result};
+      if(file)evidence.file={name:file.name,data:(await readFile(file)).split(',')[1]};
+      return api('/api/tasks/'+id+'/executions','POST',{request_id:requestId,executed_on:body.executed_on,evidence});
+    },{submit:'Registrar execução com evidência'});
+}
+function continuousCloseForm(id){
+  formModal('Encerrar fluxo contínuo',text('Motivo do encerramento','note','','required maxlength="3000"')+
+    '<p class="notice full">O fluxo sairá das atividades ativas. As execuções, evidências e avaliações permanecem no histórico.</p>',
+    body=>api('/api/tasks/'+id+'/close-flow','POST',body),{submit:'Encerrar fluxo'});
+}
+
 async function setTaskStatus(id, status) {
   const linked = await api("/api/tasks/" + id);
   if (linked.source === "content_reel") return openReelContent(linked);
+  if(linked.execution_mode==='continuo'&&status==='concluida')return continuousExecutionForm(id);
   if (status !== "concluida") {
     await api("/api/tasks/" + id, "PATCH", { status });
     toast("Atividade atualizada");
@@ -3238,6 +3294,7 @@ async function setTaskStatus(id, status) {
 
 async function taskDetail(id) {
   const t = await api("/api/tasks/" + id);
+  if(t.execution_mode==='continuo')return continuousTaskDetail(t);
   if (t.source === "content_reel") return openReelContent(t);
   if (usesPublicationEvidence(t)) return publicationTaskDetail(t);
   let workSummary=await commercialTaskHours(t);
@@ -3248,7 +3305,7 @@ async function taskDetail(id) {
   }
   dialog(
     t.title,
-    `<div class="detail-summary">${badge(startupName(t.startup_id), "blue")}${t.product_name?badge(t.product_name,"blue"):""}${badge(t.source === "story_repost" ? "Repostagem · sem remuneração" : t.source === "propria" ? "Atividade própria" : "Definida pela gestão")}${priority(t.priority)}${badge(t.status)}${t.planned_date ? badge("Execução " + human(t.planned_date)) : ""}${t.due_date ? badge("Prazo " + human(t.due_date)) : ""}</div><p class="detail-description">${e(t.description || "Sem descrição adicional.")}</p>${externalLink(t.source_url, "Abrir Reel original")}${workSummary}${taskPaySummary(t)}${taskEvidence(t)}<div class="section-label">CHECKLIST · ${(t.checklist || []).filter((x) => x.done).length}/${(t.checklist || []).length}</div>${(t.checklist || []).map((x) => `<label class="checklist-row ${x.done ? "done" : ""}"><input type="checkbox" data-task-check="${t.id}" data-check-id="${e(x.id)}" ${x.done ? "checked" : ""}><span>${e(x.title)}</span></label>`).join("") || '<div class="tiny muted">Nenhuma etapa cadastrada.</div>'}<div class="section-label">COMENTÁRIOS</div>${(t.comments || []).map((x) => `<div class="comment">${e(x.content)}<small>${e(x.author)} · ${dateTime(x.created_at)}</small></div>`).join("")}<form id="comment-form" data-id="${t.id}"><label>Adicionar comentário<textarea name="content" required maxlength="3000" placeholder="Registre uma atualização para a equipe…"></textarea></label><div class="form-actions"><button class="primary small">Publicar comentário</button></div></form><div class="section-label">ANEXOS</div>${(t.attachments || []).filter(a => !a.evidence).map((a) => `<div class="attachment"><a href="/api/tasks/${t.id}/attachments/${a.id}" download="${e(a.name)}" >${icon("paperclip")} ${e(a.name)}</a><span class="muted tiny">${fmt(Math.ceil(a.size_bytes / 1024))} KB</span>${admin() ? button(icon("x"), "attachment-delete", `data-id="${a.id}" data-task="${t.id}" aria-label="Remover anexo"`, "icon-btn") : ""}</div>`).join("") || '<p class="tiny muted">Nenhum anexo nesta atividade.</p>'}<label>Anexar arquivo · até 5 MB<input class="file-input" type="file" data-task-upload="${t.id}"></label><div class="section-label">HISTÓRICO DE ALTERAÇÕES</div>${historyHTML(t.events || [])}<div class="form-actions">${button("Fechar", "close-dialog")}${admin() ? button(icon("pencil") + "Editar atividade", "task-edit", `data-id="${t.id}"`, "primary") : ""}</div>`,
+    `<div class="detail-summary">${badge(startupName(t.startup_id), "blue")}${t.product_name?badge(t.product_name,"blue"):""}${badge(t.source === "story_repost" ? "Repostagem · sem remuneração" : t.source === "propria" ? "Atividade própria" : "Definida pela gestão")}${priority(t.priority)}${badge(t.status)}${t.planned_date ? badge("Execução " + human(t.planned_date)) : ""}${t.due_date ? badge("Prazo " + human(t.due_date)) : ""}</div><p class="detail-description">${e(t.description || "Sem descrição adicional.")}</p>${externalLink(t.source_url, "Abrir Reel original")}${workSummary}${t.parent_task_id?button("Abrir fluxo principal","task-detail",itemRef(t.parent_task_id),"small"):""}${taskPaySummary(t)}${taskEvidence(t)}<div class="section-label">CHECKLIST · ${(t.checklist || []).filter((x) => x.done).length}/${(t.checklist || []).length}</div>${(t.checklist || []).map((x) => `<label class="checklist-row ${x.done ? "done" : ""}"><input type="checkbox" data-task-check="${t.id}" data-check-id="${e(x.id)}" ${x.done ? "checked" : ""}><span>${e(x.title)}</span></label>`).join("") || '<div class="tiny muted">Nenhuma etapa cadastrada.</div>'}<div class="section-label">COMENTÁRIOS</div>${(t.comments || []).map((x) => `<div class="comment">${e(x.content)}<small>${e(x.author)} · ${dateTime(x.created_at)}</small></div>`).join("")}<form id="comment-form" data-id="${t.id}"><label>Adicionar comentário<textarea name="content" required maxlength="3000" placeholder="Registre uma atualização para a equipe…"></textarea></label><div class="form-actions"><button class="primary small">Publicar comentário</button></div></form><div class="section-label">ANEXOS</div>${(t.attachments || []).filter(a => !a.evidence).map((a) => `<div class="attachment"><a href="/api/tasks/${t.id}/attachments/${a.id}" download="${e(a.name)}" >${icon("paperclip")} ${e(a.name)}</a><span class="muted tiny">${fmt(Math.ceil(a.size_bytes / 1024))} KB</span>${admin() ? button(icon("x"), "attachment-delete", `data-id="${a.id}" data-task="${t.id}" aria-label="Remover anexo"`, "icon-btn") : ""}</div>`).join("") || '<p class="tiny muted">Nenhum anexo nesta atividade.</p>'}<label>Anexar arquivo · até 5 MB<input class="file-input" type="file" data-task-upload="${t.id}"></label><div class="section-label">HISTÓRICO DE ALTERAÇÕES</div>${historyHTML(t.events || [])}<div class="form-actions">${button("Fechar", "close-dialog")}${admin() ? button(icon("pencil") + "Editar atividade", "task-edit", `data-id="${t.id}"`, "primary") : ""}</div>`,
   );
 }
 async function leadForm(v = null) {
@@ -3658,20 +3715,26 @@ function contentAction(piece, action) {
 function marketingForm(v = null) {
   const base = v || { startup_id: state.startup || state.startups[0]?.id, creator_id: state.me.id, format: "post" };
   formModal(v ? "Editar ficha de conteúdo" : "Novo conteúdo",
-    '<p class="notice full">Novos Reels criados por Diego para Social Media ou Marketing externo têm valor de R$ 100,00, sujeito à aprovação da qualidade. Após registrar a publicação no Instagram, a agenda de Stories será gerada sem remuneração adicional.</p>' +
+    '<p class="notice full">A criação de conteúdo não gera remuneração automaticamente. Diego pode vincular R$ 100 à produção de um Reel ao criar a demanda. As repostagens nos Stories continuam sem remuneração adicional.</p>' +
     (v ? `<div class="notice full">${e(startupName(base.startup_id))}</div>` : startupsField(base.startup_id)) +
     (admin() ? sel("Responsável", "creator_id", assignedPeople(base.startup_id)
       .filter(x => ["admin", "marketing", "marketing_externo"].includes(x.role))
       .map(x => [x.id, x.name]), base.creator_id, "required data-owner-field data-marketing-owner" + (v?.production_task_id ? " disabled" : "")) : "") +
     sf("Título", "title", base.title, "text", "required") +
     sf("Campanha", "campaign", base.campaign) +
-    sel("Formato", "format", ["reel", "story", "post", "video", "outro"].map(x => [x, label(x)]), base.format, v?.production_task_id ? "disabled" : "") +
+    sel("Formato", "format", ["reel", "story", "post", "video", "outro"].map(x => [x, label(x)]), base.format, (v?.production_task_id ? "disabled " : "")+'id="marketing-format"') +
+    (!v&&managesTaskPay()?'<fieldset id="marketing-production-pay" class="pay-fields"><legend>Remuneração opcional do Reel</legend><label class="checklist-row"><input type="checkbox" name="paid_production" value="yes"> Remunerar a produção com R$ 100,00</label><p class="tiny muted">Marque apenas quando a produção tiver valor contratado. A pessoa responsável deve ser de Social Media ou Marketing externo. A liberação depende da aprovação da qualidade.</p></fieldset>':v&&!v.production_task_id?'<p class="tiny muted full">Conteúdo sem remuneração vinculada.</p>':'')+
     date("Prazo de entrega", "delivery_due", base.delivery_due || base.planned_date) +
     date("Data editorial prevista", "planned_date", base.planned_date) +
     text("Briefing e referências", "notes", base.notes) +
     (marketingFlow(base) === "planejamento" ? '<label class="checklist-row full"><input type="checkbox" name="production_started" value="yes"> Marcar como em produção</label>' : ""),
     b => api("/api/marketing" + (v ? "/" + v.id : ""), v ? "PATCH" : "POST", b),
     { submit: v ? "Salvar ficha" : "Criar conteúdo", remove: v && admin() && !v.production_task_id ? "marketing-delete" : null, id: v?.id });
+  syncMarketingProductionPay();
+}
+function syncMarketingProductionPay(){
+  const field=$('#marketing-production-pay');if(!field)return;
+  field.hidden=$('#marketing-format')?.value!=='reel';field.disabled=field.hidden;
 }
 
 function techForm(v = null) {
@@ -4116,6 +4179,8 @@ document.addEventListener("click", async (ev) => {
       return;
     }
     if(action==='activity-sort')return activitySortSheet();
+    if(action==='flow-execute')return continuousExecutionForm(id);
+    if(action==='flow-close')return continuousCloseForm(id);
     if(action==='insight-filters')return insightFilterSheet(btn.dataset.period!=='false');
     if(action==='goal-detail')return goalDetail(id,btn.dataset.kind==='material');
     if(action==='goal-filters')return goalFilterSheet();
@@ -4450,6 +4515,8 @@ const readFile = (file) =>
 document.addEventListener("change", async (ev) => {
   const x = ev.target;
   try {
+    if(x.id==='task-pay-enabled')return syncOptionalPay();
+    if(x.id==='marketing-format')return syncMarketingProductionPay();
     if(x.id==='commercial-month'){state.commercialMonth=x.value;return render();}
     if(x.id==='commercial-person'&&admin()){state.commercialPerson=x.value;return render();}
     if(x.id==='commercial-log-task')return syncCommercialLead();

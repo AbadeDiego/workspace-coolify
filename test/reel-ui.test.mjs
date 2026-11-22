@@ -12,7 +12,7 @@ test('Marketing exibe valor, aprovação e agenda no detalhe, calendário e ativ
   const startup=db.memberships.find(m=>m.user_id==='3').startup_id;
   const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date());
   const call=async(user,path,body)=>{const r=await workspaceDomain(model,user)('/api/'+path,'POST',body);assert(r.ok,await r.clone().text());return r.json();};
-  const piece=await call('1','marketing',{startup_id:startup,creator_id:'3',title:'Agenda visual',format:'reel',planned_date:day});
+  const piece=await call('1','marketing',{startup_id:startup,creator_id:'3',title:'Agenda visual',format:'reel',paid_production:'yes',planned_date:day});
   await call('3','marketing/'+piece.id+'/workflow',{action:'submit',url:'https://example.test/versao'});
   await call('1','marketing/'+piece.id+'/workflow',{action:'approve'});
   await call('3','marketing/'+piece.id+'/workflow',{action:'publish',network:'Instagram',account:'@conta',caption:'Legenda',published_at:day+'T12:00:00Z',post_url:'https://example.test/reel'});
