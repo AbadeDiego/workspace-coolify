@@ -114,3 +114,120 @@
   .activity-mobile-shell button:focus-visible, .activity-sheet-option:focus-visible { outline: 2px solid #4385e8; outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { .activity-archive summary svg { transition: none; } }
 }
+
+/* Overview and goals share the same spacing, disclosure and touch patterns. */
+.insight-page { min-width: 0; }
+.goal-title-link { min-height: 44px; text-align: left; font-weight: 600; line-height: 1.5; }
+.insight-goal-tools { display: flex; align-items: center; gap: 8px; margin: 18px 0 12px; }
+.insight-goal-tools .activity-search { flex: 1; display: flex; align-items: center; gap: 10px; margin: 0; padding: 0 14px; min-height: 46px; background: white; border: 1px solid #e6eaf1; border-radius: 12px; }
+.insight-goal-tools .activity-search > svg { flex: none; width: 18px; height: 18px; color: #98a2b3; }
+.insight-goal-tools input { min-width: 0; width: 100%; border: 0; background: transparent; padding: 12px 0; outline: none; }
+.insight-goal-tools .activity-search:focus-within { outline: 2px solid #4385e840; border-color: #4385e8; }
+.insight-goal-tools .activity-tool { display: grid; place-items: center; width: 46px; min-width: 46px; height: 46px; padding: 10px; color: #657389; border: 1px solid #e6eaf1; border-radius: 12px; background: #fff; }
+.insight-goals .activity-quick-filters { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; padding-bottom: 5px; }
+.insight-goals .activity-quick-filters button { display: inline-flex; align-items: center; white-space: nowrap; flex: none; min-height: 44px; padding: 9px 14px; background: #fff; border: 1px solid #e6eaf1; border-radius: 24px; font-size: 13px; color: #7a8598; }
+.insight-goals .activity-quick-filters button.active { color: #326fc5; background: #eaf1fc; border-color: #cfdef6; }
+.insight-goal-summary { display: flex; gap: 22px; padding: 18px 0 10px; color: #8792a5; font-size: 12px; }
+.insight-goal-summary span { display: flex; align-items: baseline; gap: 7px; }
+.insight-goal-summary b { color: #354158; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.insight-goal-count { display: flex; justify-content: space-between; align-items: center; min-height: 36px; gap: 8px; margin: 8px 0 12px; font-size: 12px; color: #929bad; }
+.insight-goal-count button { min-height: 44px; font-size: 12px; }
+.insight-goal { padding: 22px; border-color: #e7ebf2; border-radius: 18px; box-shadow: 0 2px 4px #172b4d02; }
+.insight-goal-title { display: block; width: 100%; min-height: 44px; margin: 12px 0 6px; padding: 3px 0; text-align: left; font-size: 17px; font-weight: 600; line-height: 1.45; color: #344057; border: 0; border-radius: 0; background: transparent; overflow-wrap: anywhere; }
+.insight-goal-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; margin: 13px 0 14px; font-variant-numeric: tabular-nums; }
+.insight-goal-value strong { font-size: 30px; line-height: 1.2; font-weight: 600; letter-spacing: -.9px; color: #2e3b52; }
+.insight-goal-value > span { color: #8994a6; font-size: 13px; }
+.insight-goal-value > b { margin-left: auto; color: #4385e8; font-size: 13px; font-weight: 500; }
+.insight-goal-person { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #7b879b; margin: 16px 0 6px; }
+.insight-goal-person svg, .insight-goal > p.tiny svg { width: 14px; height: 14px; flex: none; }
+.insight-goal > p.tiny { display: flex; align-items: center; gap: 6px; margin: 0; }
+.insight-goal-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-top: 15px; padding-top: 12px; border-top: 1px solid #f0f2f6; }
+.insight-goal-actions button { min-height: 44px; font-size: 12px; }
+.insight-detail-value { color: #8792a6; font-size: 15px; margin: 18px 0; }
+.insight-detail-value b { font-size: 34px; color: #344057; font-weight: 600; }
+.insight-explainer { font-size: 13px; line-height: 1.7; color: #7b879b; margin: 12px 0 22px; }
+.insight-history-title { margin: 24px 0 12px; font-size: 14px; font-weight: 600; }
+.insight-result-row { padding: 16px 0; border-top: 1px solid #edf0f5; }
+.insight-result-row time, .insight-result-row > p { color: #8792a5; font-size: 12px; }
+.insight-result-row .lead-notes { color: #59677d; font-size: 13px; }
+.insight-page button:focus-visible { outline: 2px solid #4385e8; outline-offset: 2px; }
+
+@media screen and (max-width: 700px) {
+  .insight-screen #main { padding-top: 20px; }
+  .insight-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin: 0 4px 12px; }
+  .insight-heading > div { min-width: 0; }
+  .insight-heading h1 { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: -.7px; line-height: 1.25; overflow-wrap: anywhere; }
+  .insight-heading p { color: #8994a6; font-size: 13px; line-height: 1.6; margin: 8px 0 0; }
+  .insight-heading .activity-tool { background: #fff; border: 1px solid #e6eaf1; flex: none; }
+  .insight-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 4px 18px; color: #78869b; font-size: 12px; }
+  .insight-scope svg { width: 14px; height: 14px; }
+  .insight-scope small { width: 100%; padding-left: 20px; color: #98a2b3; font-size: 11px; }
+  .insight-actions { display: flex; gap: 7px; flex-wrap: wrap; margin: 0 0 20px; }
+  .insight-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 10px 13px; font-size: 12px; border-radius: 12px; }
+  .insight-actions svg { width: 16px; height: 16px; }
+  .insight-dashboard > .kpis, .insight-materials > .kpis { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+  .insight-page .kpi { padding: 17px 14px; min-width: 0; min-height: 128px; text-align: left; border-radius: 17px; border: 1px solid #e7ebf2; box-shadow: 0 2px 4px #172b4d02; }
+  .insight-page .kpi strong { font-size: 26px; line-height: 1.3; letter-spacing: -.65px; overflow-wrap: anywhere; }
+  .insight-page .kpi .money-value { font-size: 23px; }
+  .insight-page .kpi .label { font-size: 11px; line-height: 1.5; }
+  .insight-page .kpi small { font-size: 11px; line-height: 1.5; margin-top: 7px; }
+  .insight-page .kpi .kpi-icon { width: 25px; height: 25px; }
+  .insight-page .kpi .kpi-icon svg { width: 15px; height: 15px; }
+  .insight-page .card { border-radius: 18px; border-color: #e7ebf2; box-shadow: 0 2px 4px #172b4d02; margin-bottom: 14px; }
+  .insight-page .card-head { padding: 18px 16px 14px; gap: 8px; flex-wrap: wrap; }
+  .insight-page .card-head h2 { font-size: 15px; font-weight: 600; }
+  .insight-page .card-head p { font-size: 11px; line-height: 1.6; }
+  .insight-page .card-body { padding: 0 16px 18px; }
+  .insight-page .card-head .text-link { min-height: 44px; font-size: 12px; }
+  .insight-page .task { padding-block: 14px; }
+  .insight-page .task-main { align-items: start; gap: 8px; }
+  .insight-page .task-main > div { min-width: 0; }
+  .insight-page .task-main .text-link { min-height: 44px; text-align: left; font-size: 14px; line-height: 1.5; }
+  .insight-page .task-check { min-width: 44px; width: 44px; height: 44px; border-radius: 50%; }
+  .insight-page .task-meta { font-size: 11px; line-height: 1.6; }
+  .insight-fold { background: #fff; border: 1px solid #e7ebf2; border-radius: 18px; margin: 0 0 14px; overflow: hidden; }
+  .insight-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; min-height: 68px; padding: 17px; font-size: 14px; font-weight: 500; color: #56657d; cursor: pointer; }
+  .insight-fold > summary::-webkit-details-marker { display: none; }
+  .insight-fold > summary > span { min-width: 0; }
+  .insight-fold > summary small { display: block; font-size: 11px; font-weight: 400; color: #98a2b3; margin-top: 4px; }
+  .insight-fold > summary > svg { width: 18px; height: 18px; flex: none; transition: transform .18s ease; }
+  .insight-fold[open] > summary > svg { transform: rotate(180deg); }
+  .insight-fold-body { padding: 0 14px 16px; min-width: 0; }
+  .insight-fold-body > .card { border: 0; box-shadow: none; margin-bottom: 0; border-radius: 0; }
+  .insight-fold-body > .card > .card-head { padding: 10px 0 14px; }
+  .insight-fold-body > .card > .card-body { padding: 0; }
+  .insight-fold .cols { display: block; margin: 0; }
+  .insight-fold .cols > div:empty { display: none; }
+  .insight-fold .metric-strip { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 0; padding: 0; border: 0; }
+  .insight-fold .mini-metric { min-width: 0; min-height: 88px; padding: 14px 10px; border: 1px solid #edf0f6; border-radius: 12px; text-align: left; }
+  .insight-fold .mini-metric b { font-size: 21px; overflow-wrap: anywhere; }
+  .insight-fold .mini-metric small { white-space: normal; font-size: 11px; line-height: 1.5; }
+  .insight-startup { padding: 14px 0; border-top: 1px solid #edf0f5; }
+  .insight-startup .text-link { min-height: 44px; font-size: 14px; }
+  .insight-startup .delivery-progress { min-width: 0; width: 100%; }
+  .insight-startup > p { margin-top: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+  .insight-page .team-row { width: 100%; min-height: 72px; text-align: left; padding-inline: 0; }
+  .insight-page .team-name { min-width: 0; }
+  .insight-page .team-score { flex: none; font-size: 18px; }
+  .insight-goal-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 12px; }
+  .insight-goal-summary { justify-content: space-between; gap: 8px; font-size: 10px; }
+  .insight-goal-summary span { flex-direction: column; gap: 3px; }
+  .insight-goal-summary b { font-size: 23px; }
+  .insight-page .insight-goal { padding: 20px; margin: 0; }
+  .insight-goal-value strong { font-size: 32px; }
+  .insight-goal-person { font-size: 12px; }
+  .insight-goal > p.tiny { font-size: 11px; }
+  .insight-materials .material-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+  .insight-materials .material-controls label { width: 100%; }
+  .insight-materials .material-tabs { display: flex; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; padding-bottom: 4px; }
+  .insight-materials .material-tabs button { flex: none; padding: 10px 14px; min-height: 44px; }
+  .insight-materials .material-context { margin-bottom: 14px; padding: 16px; border-radius: 16px; }
+  .insight-materials .material-context h2 { font-size: 18px; }
+  .insight-materials .material-context p { font-size: 12px; line-height: 1.6; }
+  .insight-materials .material-products { gap: 12px; margin-bottom: 16px; }
+  .insight-materials .material-product-card { padding: 20px; }
+  .insight-materials .material-product-card h2 { font-size: 18px; }
+  .insight-materials .material-product-card .workflow-actions button { min-height: 44px; }
+  @media (max-width: 360px) { .insight-goal-actions { flex-direction: column; align-items: stretch; } .insight-goal-actions button { justify-content: center; } }
+  @media (prefers-reduced-motion: reduce) { .insight-fold > summary > svg { transition: none; } }
+}

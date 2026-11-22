@@ -89,3 +89,11 @@ Em telas de até 700 px, **Atividades** e **Meu dia** usam uma lista compartilha
 As atividades concluídas ficam recolhidas, com opção de expandir. Cada lista carrega até 40 itens por vez e permite mostrar mais. O botão flutuante cria atividades; tocar no círculo de conclusão abre o fluxo de evidência existente. A remuneração e as aprovações seguem as mesmas regras. O calendário e o balanço do contrato da Annike, além das filas comercial e editorial em Meu dia, continuam disponíveis.
 
 Estrelas são destaques pessoais salvos no banco por usuário, independentes da prioridade definida pela Gestão e dos destaques das outras pessoas. A ordenação e os filtros alteram apenas a visualização. A exportação de dados foi removida de todos os módulos e de todas as resoluções; downloads de evidências e materiais entregues foram preservados.
+
+## Visão Geral e Metas
+
+Em telas de até 700 px, **Visão Geral** prioriza os quatro indicadores principais, decisões da Gestão, próximas entregas e metas em foco. Mais indicadores, gráficos, portfólio, ritmo da equipe e evolução ficam em seções expansíveis, com os mesmos dados e ações. O painel inferior de filtros reúne startup, período e datas personalizadas. Os indicadores continuam clicáveis para abrir os registros correspondentes.
+
+**Metas** usa cartões com progresso, alvo, unidade, pessoa e ciclo, além de busca, filtros por situação/pessoa e ordenação por prazo, progresso ou título. No celular, metas atingidas e inativas ficam recolhidas quando a seleção é “Todas”. Ao abrir uma meta, o detalhe apresenta os resultados vinculados ao ciclo, permite iniciar o registro com a meta selecionada e mantém o ajuste de alvo restrito à Gestão. O filtro geral de período altera o histórico de resultados; o progresso continua usando o ciclo próprio da meta e a contribuição da startup selecionada.
+
+Vanessa usa os mesmos componentes em Visão Geral e Metas, preservando produto, unidade, período e evidências de cada resultado. O TRL e seu histórico ficam acessíveis em seção expansível no celular. Experimentos, registros de trabalho e a navegação por materiais continuam disponíveis. As mudanças são de interface; não modificam APIs, consultas, regras de cálculo ou permissões.

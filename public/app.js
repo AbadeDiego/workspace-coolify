@@ -385,6 +385,7 @@ function resetWorkspace() {
     materialProduct: "", materialTab: "overview", materialStatus: "", workDate: "", workPerson: "", payMonth: "", payPerson: "", dashboardDetails: new Map(), data: {}, filter: {}, sort: {}, pagination: {}, calendar: 0, 
     view: { crm: window.matchMedia("(max-width: 700px)").matches ? "list" : "board" },
     activityScope:"mine",activityRange:"",activitySort:"priority",activitySearch:"",activityFilter:{},activityFavoritesOnly:false,activityCompletedOpen:false,activityLimits:{},activityPreferences:{},
+    goalUi:{},goalDetails:new Map(),goalContext:null,
   });
   window.searchIndex = null;
   $("#editor").close();
@@ -439,7 +440,9 @@ let renderVersion = 0;
 async function render() {
   if (!state.me) return;
   const version = ++renderVersion;
-  document.body?.classList.toggle("activity-screen",compactActivities()&&["tasks","myday"].includes(state.section));
+  const insightScreen=compactActivities()&&(['dashboard','goals'].includes(state.section)||state.section==='materials'&&['overview','goals'].includes(state.materialTab||'overview'));
+  document.body?.classList.toggle("activity-screen",compactActivities()&&["tasks","myday"].includes(state.section)||insightScreen);
+  document.body?.classList.toggle("insight-screen",insightScreen);
   nav();
   $("#page-title").textContent =
     (state.section === "marketing" && external() ? "Minhas entregas" : NAV.find((x) => x[0] === state.section)?.[2]) || "Workspace";
@@ -655,7 +658,107 @@ function deliveryBar(s){const value=s.percent??(s.total?Math.round(s.done/s.tota
 const goalUnit=g=>({contatos:'contatos',reunioes:'reuniões',reels:'reels',stories:'stories',videos:'vídeos',atividade:'atividades'}[g.metric]||g.unit||g.metric||'resultados');
 const goalOutcome=g=>`${fmt(g.done)} de ${fmt(g.target)} ${goalUnit(g)} · ${Math.round(Number(g.done)/Number(g.target)*100)}%`;
 const goalPeriod=g=>`${human(g.current_from)} a ${human(new Date(new Date(g.current_to).getTime()-86400000).toISOString())}`;
-function goalRows(gs){return gs.length?gs.map(g=>`<div class="goal-row"><b>${e(g.title)}</b><p class="goal-outcome">${e(goalOutcome(g))}</p>${progress(g.done,g.target)}<small>${e(g.person_name)} · ${e(goalPeriod(g))}</small>${state.startup?'<small>Contribuição da startup · alvo individual consolidado</small>':''}</div>`).join(''):empty('Sem metas neste ciclo','Sem dados para esta startup no ciclo atual.','target')}
+function goalRows(gs){return gs.length?gs.map(g=>{rememberGoal(g,false,state.data.activities||[]);return `<div class="goal-row">${button(e(g.title),'goal-detail',itemRef(g.id)+' data-kind="general"','text-link goal-title-link')}<p class="goal-outcome">${e(goalOutcome(g))}</p>${progress(g.done,g.target)}<small>${e(g.person_name)} · ${e(goalPeriod(g))}</small>${state.startup?'<small>Contribuição da startup · alvo individual consolidado</small>':''}</div>`}).join(''):empty('Sem metas neste ciclo','Sem dados para esta startup no ciclo atual.','target')}
+
+function insightFold(title,html,note='',open=false){
+  return compactActivities()?`<details class="insight-fold" ${open?'open':''}><summary><span>${e(title)}${note?'<small>'+e(note)+'</small>':''}</span>${icon('chevron-down')}</summary><div class="insight-fold-body">${html}</div></details>`:html;
+}
+function insightHeader(title,note,actions='',period=true){
+  return `<header class="insight-heading"><div><h1>${e(title)}</h1><p>${e(note)}</p></div>${button(icon('sliders-horizontal'),'insight-filters',`data-period="${period}" aria-label="Filtrar startup${period?' e período':''}" aria-haspopup="dialog"`,'activity-tool')}</header>`+
+    `<div class="insight-scope">${icon('layers')}<span>${e(selectedScope())}</span>${period?'<small>'+e(chartPeriod())+'</small>':''}</div>`+
+    (actions?`<div class="insight-actions">${actions}</div>`:'');
+}
+function applyInsightPeriod(period){
+  state.period=period;const now=today();state.to=now;
+  if(period==='all'){state.from='';state.to='';}
+  else if(period==='month'){state.from=monthStart(now);state.to=monthEnd(now);}
+  else if(period==='year'){state.from=now.slice(0,4)+'-01-01';state.to=now.slice(0,4)+'-12-31';}
+  else{const d=new Date(now+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-((d.getUTCDay()+6)%7));state.from=d.toISOString().slice(0,10);d.setUTCDate(d.getUTCDate()+6);state.to=d.toISOString().slice(0,10);}
+  state.pagination={};
+}
+function insightFilterSheet(withPeriod=true){
+  formModal('Filtros da visualização',
+    sel('Startup','startup',[['','Todas as startups'],...state.startups.map(s=>[s.id,s.name])],state.startup)+
+    (withPeriod?sel('Período','period',[['week','Esta semana'],['month','Este mês'],['year','Este ano'],['all','Todo o período'],['custom','Escolher datas']],state.period)+
+      date('De (período personalizado)','from',state.from)+date('Até (período personalizado)','to',state.to):''),
+    async b=>{
+      if(withPeriod&&b.period==='custom'){
+        if(!b.from||!b.to||b.from>b.to)throw Error('Informe a data inicial e a data final em ordem.');
+        state.period='custom';state.from=b.from;state.to=b.to;
+      }else if(withPeriod)applyInsightPeriod(b.period);
+      state.startup=b.startup||'';$('#startup-filter').value=state.startup;state.data={};state.pagination={};
+    },{submit:'Aplicar filtros'});
+  $('#editor').classList.add('activity-sheet');
+}
+function overviewNextTasks(tasks){
+  return card('Próximas entregas',taskList(tasks.filter(openTask).sort(compareWorkTasks).slice(0,5)),
+    'Prioridades atuais do portfólio',button('Ver atividades '+icon('arrow-up-right'),'navigate','data-value="tasks"','text-link'));
+}
+function overviewPortfolio(stats,finance){
+  return `<div class="insight-portfolio">${stats.map(s=>`<article class="insight-startup"><div class="between">${button(e(s.name)+icon('arrow-up-right'),'dashboard-startup',itemRef(s.id),'text-link')}<span class="tiny muted">${s.open} pendentes</span></div>${deliveryBar(s)}<p class="tiny muted">${e(s.market_model||'')}${crmAccess()?' · '+s.leads+' leads ativos':''}${admin()?' · Receita '+(finance.some(x=>x.startup_id===s.id&&x.entry_type==='receita')?brl(s.receita):'Sem dados'):''}</p></article>`).join('')||empty('Nenhuma startup nesta seleção')}</div>`;
+}
+function rememberGoal(goal,material,logs){
+  state.goalDetails||=new Map();state.goalDetails.set((material?'material:':'general:')+goal.id,{goal,material,logs});
+}
+function goalPhase(g,material=false){
+  if(!material&&!g.active)return 'inactive';
+  if(Number(g.done)>=Number(g.target))return 'achieved';
+  if(g.end_date<today())return 'expired';
+  if(g.start_date>today())return 'future';
+  return 'active';
+}
+const goalPhaseLabels={active:'Em andamento',achieved:'Atingida',expired:'Vigência encerrada',future:'Agendada',inactive:'Inativa'};
+function goalCard(g,material=false){
+  const phase=goalPhase(g,material),percent=material?Math.round(Number(g.done)/Number(g.target)*100):g.percent;
+  return `<article class="card goal-card insight-goal"><div class="between">${badge(goalPhaseLabels[phase],phase==='achieved'?'ok':phase==='expired'?'warn':'')}${material?badge(g.product_name,'blue'):badge(label(g.cadence))}</div>
+    ${button(e(g.title),'goal-detail',itemRef(g.id)+` data-kind="${material?'material':'general'}"`,'insight-goal-title')}
+    <p class="insight-goal-value"><strong>${fmt(g.done)}</strong><span>de ${fmt(g.target)} ${e(goalUnit(g))}</span><b>${fmt(percent)}%</b></p>${progress(g.done,g.target)}
+    <p class="insight-goal-person">${icon('user-round')}${e(g.person_name)}</p><p class="tiny muted">${icon('calendar')} ${material?human(g.start_date)+' a '+human(g.end_date):goalPeriod(g)}</p>
+    <div class="insight-goal-actions">${button('Ver progresso '+icon('arrow-up-right'),'goal-detail',itemRef(g.id)+` data-kind="${material?'material':'general'}"`,'text-link')}${material?button('Registrar resultado','material-new-result',`data-product="${e(g.product_id)}" data-goal="${e(g.id)}"`,'small'):g.active?button('Registrar resultado','goal-contribute',itemRef(g.id),'small'):''}</div></article>`;
+}
+function goalCollection(goals,logs,material=false){
+  goals.forEach(g=>rememberGoal(g,material,logs));
+  const f=state.goalUi||{},key=material?'material':'general';
+  state.goalContext={goals,logs,material};
+  const found=goals.filter(g=>(!f.query||[g.title,g.person_name,g.product_name,goalUnit(g)].join(' ').toLocaleLowerCase('pt-BR').includes(f.query.toLocaleLowerCase('pt-BR')))&&
+    (!f.phase||goalPhase(g,material)===f.phase)&&(!f.owner||g.user_id===f.owner));
+  const ordered=[...found].sort((a,b)=>f.order==='title'?a.title.localeCompare(b.title,'pt-BR'):f.order==='progress'?Number(b.done)/Number(b.target)-Number(a.done)/Number(a.target)||a.title.localeCompare(b.title,'pt-BR'):String(a.end_date||'9999').localeCompare(String(b.end_date||'9999'))||a.title.localeCompare(b.title,'pt-BR'));
+  const reached=goals.filter(g=>goalPhase(g,material)==='achieved').length;
+  const active=goals.filter(g=>['active','future','expired'].includes(goalPhase(g,material))).length;
+  const grid=items=>`<div class="grid3 insight-goal-grid">${items.map(g=>goalCard(g,material)).join('')}</div>`;
+  const primary=ordered.filter(g=>!['achieved','inactive'].includes(goalPhase(g,material)));
+  const archived=ordered.filter(g=>['achieved','inactive'].includes(goalPhase(g,material)));
+  return `<div class="insight-goals" data-goal-collection="${key}"><div class="insight-goal-summary"><span><b>${active}</b> para acompanhar</span><span><b>${reached}</b> atingidas</span><span><b>${goals.length}</b> no total</span></div>
+    <div class="insight-goal-tools"><label class="activity-search">${icon('search')}<span class="sr-only">Buscar metas</span><input id="goal-search" type="search" value="${e(f.query||'')}" placeholder="Buscar uma meta" autocomplete="off"></label>${button(icon('sliders-horizontal'),'goal-filters','aria-label="Filtrar e ordenar metas" aria-haspopup="dialog"','activity-tool')}</div>
+    <div class="activity-quick-filters" role="group" aria-label="Situação das metas">${[['','Todas'],['active','Em andamento'],['achieved','Atingidas'],['expired','Encerradas'],['future','Agendadas'],...(!material?[['inactive','Inativas']]:[])].map(([value,title])=>button(title,'goal-phase',`data-value="${value}" aria-pressed="${(f.phase||'')===value}"`,(f.phase||'')===value?'active':'')).join('')}</div>
+    <p class="insight-goal-count">${ordered.length} ${ordered.length===1?'meta encontrada':'metas encontradas'}${f.query||f.owner||f.phase?button('Limpar filtros','goal-clear','','text-link'):''}</p>`+
+    (!ordered.length?empty(goals.length?'Nenhuma meta corresponde aos filtros':'Nenhuma meta cadastrada',admin()?'Crie uma meta para começar a acompanhar os resultados.':'As metas atribuídas pela Gestão aparecerão aqui.','target'):
+      compactActivities()&&!f.phase?grid(primary)+(archived.length?insightFold('Atingidas e inativas',grid(archived),archived.length+' metas'):'' ):grid(ordered))+'</div>';
+}
+function goalFilterSheet(){
+  const f=state.goalUi||{};
+  formModal('Filtrar e ordenar metas',
+    (admin()?sel('Pessoa','owner',[['','Todas as pessoas'],...state.users.map(u=>[u.id,u.name])],f.owner):'')+
+    sel('Ordenar por','order',[['deadline','Prazo mais próximo'],['progress','Maior progresso'],['title','Título']],f.order||'deadline'),
+    async b=>{state.goalUi={...state.goalUi,owner:b.owner||'',order:b.order||'deadline'};},{submit:'Aplicar'});
+  $('#editor').classList.add('activity-sheet');
+}
+function goalDetail(id,material=false){
+  const entry=state.goalDetails?.get((material?'material:':'general:')+id);if(!entry)return;
+  const {goal:g,logs}=entry;
+  const from=material?g.start_date:g.current_from,to=material?g.end_date:g.current_to;
+  const rows=logs.filter(r=>r.goal_id===g.id&&(!material||r.user_id===g.user_id)&&
+    (material?dateOnly(r.occurred_on)>=from&&dateOnly(r.occurred_on)<=to:dateOnly(r.occurred_at)>=from&&dateOnly(r.occurred_at)<to))
+    .sort((a,b)=>String(b.occurred_on||b.occurred_at).localeCompare(String(a.occurred_on||a.occurred_at)));
+  dialog(g.title,`<div class="detail-summary">${badge(goalPhaseLabels[goalPhase(g,material)])}${material?badge(g.product_name,'blue'):badge(label(g.cadence))}</div>
+    <p class="insight-detail-value"><b>${fmt(g.done)}</b> de ${fmt(g.target)} ${e(goalUnit(g))}</p>${progress(g.done,g.target)}
+    <p class="muted">${e(g.person_name)} · ${material?human(g.start_date)+' a '+human(g.end_date):goalPeriod(g)}</p>
+    <p class="tiny muted">${material?'O progresso considera os resultados da mesma pessoa, produto e período.':state.startup?'Contribuição da startup selecionada. O alvo permanece único para a pessoa.':'Resultado consolidado da pessoa entre suas startups, no ciclo atual.'}</p>
+    <div class="workflow-actions">${material?button('Registrar resultado','material-new-result',`data-product="${e(g.product_id)}" data-goal="${e(g.id)}"`,'primary'):g.active?button('Registrar resultado','goal-contribute',itemRef(g.id),'primary'):''}${admin()?button('Ajustar meta',material?'material-edit-goal':'edit-goal',itemRef(g.id),'small'):''}</div>
+    <h3 class="insight-history-title">Resultados deste ciclo · ${rows.length}</h3>`+
+    (rows.length?rows.map(r=>`<article class="insight-result-row"><div class="between"><b>+${fmt(r.quantity)} ${e(goalUnit(g))}</b><time>${human(r.occurred_on||r.occurred_at)}</time></div><p>${e(r.startup_name||r.startup||g.product_name||'')}</p>${material?button(e(r.title),'material-result-detail',itemRef(r.id),'text-link'):`<p class="lead-notes">${e(r.note||'')}</p>`}</article>`).join(''):empty('Nenhum resultado neste ciclo','Os registros vinculados à meta aparecerão aqui.','target')));
+  if(compactActivities())$('#editor').classList.add('activity-detail');
+}
 
 function taskList(rows) {
   return rows.length
@@ -823,7 +926,10 @@ async function dashboard(version = renderVersion) {
       ),
   );
   let h =
-    intro(
+    (compactActivities()?insightHeader('Visão geral',`Olá, ${state.me.name.split(' ')[0]}. ${admin()?'Acompanhe as prioridades da equipe.':'Acompanhe suas entregas e resultados.'}`,
+      button(icon('calendar-days')+'Meu dia','navigate','data-value="myday"','small')+
+      button(icon('target')+'Metas','navigate','data-value="goals"','small')+
+      (admin()?button(icon('plus')+'Nova atividade','new-task','','small primary'):'')) : intro(
       `Tudo sob controle${state.me.name ? " , " + state.me.name.split(" ")[0] : ""}.`.replace(
         "controle ,",
         "controle,",
@@ -832,8 +938,8 @@ async function dashboard(version = renderVersion) {
       admin()
         ? button(icon("plus") + "Nova atividade", "new-task", "", "primary")
         : "",
-    ) + periodBar();
-  if (admin()) h += card("Fila de decisões", workflowList(decisions, "Nenhuma decisão pendente"));
+    ) + periodBar());
+  if (admin()&&!compactActivities()) h += card("Fila de decisões", workflowList(decisions, "Nenhuma decisão pendente"));
   h += `<div class="kpis">
     ${kpi("Startups no portfólio", stats.length, state.startup ? "Visão da startup selecionada" : "Negócios acompanhados", "layers", "", portfolioKey)}
     ${kpi("Atividades pendentes", open.length, "Entregas no período selecionado", "circle-check", "", pendingKey)}
@@ -845,7 +951,11 @@ async function dashboard(version = renderVersion) {
     ${admin() ? kpi("Resultado financeiro", moneyOrMissing(balance), resultNote, "chart-no-axes-combined", resultTone, balanceKey)
       : kpi("Metas atingidas", achieved.length, "No ciclo atual das metas", "target", "", goalsKey)}
   </div>`;
-  h += `<div class="metric-strip">
+  if(compactActivities()){
+    if(admin())h+=insightFold('Decisões pendentes',workflowList(decisions.slice(0,3),'Nenhuma decisão pendente')+(decisions.length>3?insightFold('Ver mais decisões',workflowList(decisions.slice(3),''),(decisions.length-3)+' restantes'):''),decisions.length+' para avaliar',decisions.length>0);
+    h+=overviewNextTasks(tasks)+card('Metas em foco',goalRows(currentGoals.slice(0,3)),'Ciclo atual · contribuição da seleção',button('Ver todas','navigate','data-value="goals"','text-link'));
+  }
+  h += insightFold('Mais indicadores',`<div class="metric-strip">
     ${dashboardMetric("Atividades atrasadas", late.length, lateKey)}
     ${crmAccess() ? dashboardMetric("Reuniões agendadas", meetings.length, meetingsKey)
       : dashboardMetric("Atividades pendentes", open.length, pendingKey)}
@@ -855,7 +965,7 @@ async function dashboard(version = renderVersion) {
       dashboardMetric("Despesas realizadas", moneyOrMissing(expense), expenseKey)
       : dashboardMetric("Registros no período", results.length, resultsKey) +
         dashboardMetric("Minhas startups", stats.length, portfolioKey)}
-  </div>`;
+  </div>`,'Resultados e acompanhamento');
   const statusRows = ["pendente", "em_andamento", "concluida", "bloqueada"].map(status => {
     const rows = t.filter(x => x.status === status);
     return [label(status), rows.length, taskDetailKey("status-" + status, "Atividades · " + label(status), rows)];
@@ -877,7 +987,7 @@ async function dashboard(version = renderVersion) {
     const rows = leads.filter(x => x.stage === stage);
     return [stage, rows.length, leadDetailKey("stage-" + stage, "Leads · " + stage, rows)];
   }) : [];
-  h += `<div class="cols"><div>${chart}</div><div>${card(crmAccess() ? "Desempenho comercial" : "Progresso das metas", crmAccess() ? dashboardBars(stageRows) : goalRows(currentGoals), "Distribuição atual da seleção", button("Ver detalhes " + icon("arrow-up-right"), "navigate", `data-value="${crmAccess() ? "commercial" : "goals"}"`, "text-link"))}</div></div>`;
+  h += insightFold('Análises e distribuição',`<div class="cols"><div>${chart}</div><div>${card(crmAccess() ? "Desempenho comercial" : "Progresso das metas", crmAccess() ? dashboardBars(stageRows) : goalRows(currentGoals), "Distribuição atual da seleção", button("Ver detalhes " + icon("arrow-up-right"), "navigate", `data-value="${crmAccess() ? "commercial" : "goals"}"`, "text-link"))}</div></div>`,'Gráficos e valores do período');
   const cols = [
     {
       title: "Startup",
@@ -903,15 +1013,15 @@ async function dashboard(version = renderVersion) {
         ]
       : []),
   ];
-  h += card(
+  h += insightFold('Startups e entregas',card(
     "Seu portfólio",
-    table(stats, cols, "portfolio", false),
+    compactActivities()?overviewPortfolio(stats,f):table(stats, cols, "portfolio", false),
     "Selecione uma startup para abrir suas atividades",
     badge(
       state.startup ? "1 startup" : state.startups.length + " startups",
       "blue",
     ),
-  );
+  ),stats.length+' startups na seleção');
   const owners = [...new Set(t.map((x) => String(x.assigned_to)))];
   const team = owners.map((id) => {
     const all = t.filter((x) => String(x.assigned_to) === id),
@@ -920,7 +1030,7 @@ async function dashboard(version = renderVersion) {
     const key = taskDetailKey("team-" + id, "Atividades de " + name, all);
     return { name, all: all.length, done, key };
   });
-  h += `<div class="cols"><div>${card(
+  h += insightFold('Ritmo da equipe',`<div class="cols"><div>${compactActivities()?'':card(
     "Próximas entregas",
     taskList(
       tasks
@@ -935,16 +1045,16 @@ async function dashboard(version = renderVersion) {
       'data-value="tasks"',
       "text-link",
     ),
-  )}</div><div>${card("Ritmo da equipe", team.map(x => dashboardLink(`<span class="avatar">${e(x.name[0])}</span><span class="team-name"><b>${e(x.name)}</b><small>${x.done} de ${x.all} entregas concluídas</small></span><span class="team-score">${Math.round((x.done / x.all) * 100)}%<small>conclusão</small></span>`, x.key, "team-row")).join("") || empty("A equipe começa por aqui", "Atribua atividades para acompanhar as entregas.", "users"), "Conclusão das atividades no período")}${card("Metas em foco", goalRows(currentGoals.slice(0, 3)), "Ciclo atual · contribuição da seleção", button("Ver metas " + icon("arrow-up-right"), "navigate", 'data-value="goals"', "text-link"))}</div></div>`;
-  h += card(
+  )}</div><div>${card("Ritmo da equipe", team.map(x => dashboardLink(`<span class="avatar">${e(x.name[0])}</span><span class="team-name"><b>${e(x.name)}</b><small>${x.done} de ${x.all} entregas concluídas</small></span><span class="team-score">${Math.round((x.done / x.all) * 100)}%<small>conclusão</small></span>`, x.key, "team-row")).join("") || empty("A equipe começa por aqui", "Atribua atividades para acompanhar as entregas.", "users"), "Conclusão das atividades no período")}${compactActivities()?'':card("Metas em foco", goalRows(currentGoals.slice(0, 3)), "Ciclo atual · contribuição da seleção", button("Ver metas " + icon("arrow-up-right"), "navigate", 'data-value="goals"', "text-link"))}</div></div>`,'Conclusão das atividades no período');
+  h += insightFold('Evolução de atividades',card(
     "Evolução de atividades",
     activityTrend(tasks),
     chartPeriod(),
     chartLegend([{label:'Criadas',color:VIZ.blue},{label:'Concluídas',color:VIZ.green}]),
-  );
+  ),chartPeriod());
   if (version === renderVersion) state.dashboardDetails = details;
   
-  return h;
+  return '<div class="insight-page insight-dashboard">'+h+'</div>';
 }
 async function tasksPage() {
   if (compactActivities()) return mobileActivities(await api("/api/tasks"));
@@ -1306,46 +1416,19 @@ async function myday() {
 }
 async function goalsPage() {
   if(state.me?.role === "desenvolvimento")return materialsPage("goals");
-  const [gs, logs] = await Promise.all([load("goals"), load("activities")]);
-  
-  return (
-    intro(
-      "Objetivos claros. Evolução visível.",
-      "Metas por pessoa, com registros vinculados a cada startup.",
-      button(
-        icon("plus") + "Registrar resultado",
-        "new-activity",
-        "",
-        "primary",
-      ),
-    ) +
-    `<div class="notice">${state.startup ? "Os valores mostram a contribuição de " + e(startupName(state.startup)) + " para a meta da pessoa." : "Os resultados somam as startups atendidas por cada pessoa."} O alvo é único por pessoa e não se multiplica entre empresas. O progresso usa o ciclo atual da meta.</div><div class="grid3">${gs.map((g) => `<section class="card goal-card"><div class="between">${badge(g.active ? "Ativa" : "Inativa", g.active ? "blue" : "")}${badge(label(g.cadence))}</div><h2 style="margin-top:15px">${e(g.title)}</h2><div class="goal-value" aria-label="${e(goalOutcome(g))}"><strong>${fmt(g.done)}</strong> <span>de ${fmt(g.target)} ${e(goalUnit(g))} · ${Math.round(Number(g.done)/Number(g.target)*100)}%</span></div>${progress(g.done, g.target)}<div class="between tiny muted"><span>${e(g.person_name)}</span><span>${g.percent}%</span></div><div class="task-meta">${human(g.current_from)} a ${human(new Date(new Date(g.current_to).getTime() - 86400000).toISOString())}</div>${admin() ? button("Ajustar meta", "edit-goal", `data-id="${g.id}"`, "text-link") : ""}</section>`).join("") || empty("Nenhuma meta cadastrada")}</div>${admin() ? `<div class="toolbar">${button(icon("plus") + "Criar meta", "new-goal")}</div>` : ""}` +
-    periodBar() +
-    card(
-      "Histórico de resultados",
-      table(
-        periodRows(logs, "occurred_at"),
-        [
-          {
-            title: "Data",
-            key: "occurred_at",
-            render: (x) => human(x.occurred_at),
-          },
-          { title: "Pessoa", key: "person_name" },
-          { title: "Startup", key: "startup" },
-          { title: "Indicador", key: "metric" },
-          {
-            title: "Quantidade",
-            key: "quantity",
-            render: (x) => fmt(x.quantity),
-          },
-          { title: "Descrição", key: "note" },
-        ],
-        "activities",
-      ),
-      "Registros no período selecionado",
-    )
-  );
+  const [goals,logs]=await Promise.all([load("goals"),load("activities")]);
+  const actions=button(icon('plus')+'Registrar resultado','new-activity','','primary')+(admin()?button('Criar meta','new-goal','','small'):'');
+  const header=compactActivities()?insightHeader('Metas','Acompanhe o progresso e registre os avanços.',actions):intro('Objetivos claros. Evolução visível.','Metas por pessoa, com registros vinculados a cada startup.',actions);
+  const history=card('Histórico de resultados',table(periodRows(logs,'occurred_at'),[
+    {title:'Data',key:'occurred_at',render:x=>human(x.occurred_at)},
+    {title:'Pessoa',key:'person_name'},{title:'Startup',key:'startup'},
+    {title:'Indicador',key:'metric'},{title:'Quantidade',key:'quantity',render:x=>fmt(x.quantity)},
+    {title:'Descrição',key:'note'},
+  ],'activities'),'Registros no período selecionado');
+  return '<div class="insight-page insight-goals-page">'+header+
+    insightFold('Como acompanhar o progresso',`<p class="insight-explainer">${state.startup?'Os valores mostram a contribuição de '+e(startupName(state.startup))+' para a meta da pessoa.':'Os resultados somam as startups atendidas por cada pessoa.'} O alvo é único por pessoa e não se multiplica entre empresas. As metas usam seu próprio ciclo; o filtro de período altera o histórico de resultados.</p>`)+
+    goalCollection(goals,logs)+(compactActivities()?'':periodBar())+insightFold('Histórico de resultados',history,chartPeriod())+
+    (compactActivities()?button(icon('plus')+'<span>Registrar resultado</span>','new-activity','aria-label="Registrar resultado"','activity-fab insight-fab'):'')+'</div>';
 }
 function leadCard(l) {
   return `<article class="lead-card" draggable="true" data-lead-drag="${l.id}"><div class="between">${button(e(l.name), "lead-detail", `data-id="${l.id}"`, "text-link")}${button(icon("more-horizontal"), "lead-edit", `data-id="${l.id}" aria-label="Editar lead"`, "icon-btn")}</div><p>${e(l.company || "Contato individual")}<br>${e(l.startup_name)} · ${e(l.owner_name || "Sem responsável")}</p><div class="lead-value">${brl(l.estimated_value_cents)}</div><div class="card-divider"></div><div class="between"><span class="tiny muted">${e(l.phone || "Sem telefone")}</span>${button(icon("message-circle"), "lead-contact", `data-id="${l.id}" aria-label="Registrar contato"`, "icon-btn")}</div><div class="task-meta ${l.next_contact_at && new Date(l.next_contact_at) < new Date() ? "due-alert" : ""}">Retorno · ${dateTime(l.next_contact_at)}</div><select data-lead-stage="${l.id}" aria-label="Etapa do lead ${e(l.name)}">${options(
@@ -2538,12 +2621,14 @@ async function materialsPage(requestedTab){
   const tasks=allTasks.filter(x=>x.product_id&&own(x)),goals=allGoals.filter(own),results=allResults.filter(own);
   const experiments=allExperiments.filter(own),worklogs=workLogRows(tasks,allWorklogs.filter(own));
   const done=tasks.filter(x=>x.status==='concluida').length,open=tasks.filter(openTask).length;
-  const header=intro('Desenvolvimento de materiais', 'Da ideação aos experimentos, resultados e evolução tecnológica.',
+  const header=compactActivities()&&['overview','goals'].includes(tab)?insightHeader(tab==='goals'?'Metas dos materiais':'Visão geral dos materiais',tab==='goals'?'Avanços por pessoa, produto e período.':'Ideias, experimentos, resultados e evolução tecnológica.',
+    tab==='goals'?(admin()?button(icon('plus')+'Criar meta','material-new-goal','','small primary'):''):
+      button(icon('plus')+'Novo produto','material-new-product','','small primary'),false):intro('Desenvolvimento de materiais', 'Da ideação aos experimentos, resultados e evolução tecnológica.',
     button(icon('plus')+'Novo produto','material-new-product','','primary'));
   if(state.startup&&state.startup!==MATERIAL_SPACE)return header+card('Seleção de projeto',empty('Selecione Materiais de Palma','Esta área reúne o desenvolvimento dos produtos de palma.','flask-conical')+button('Abrir Materiais de Palma','material-scope','','primary'));
   const controls=`<div class="material-controls">${sel('Produto','material-product',[['','Todos os produtos'],...products.map(x=>[x.id,x.name])],selected,'id="material-product"')}${button('Meu dia '+icon('arrow-up-right'),'navigate','data-value="myday"','small')}</div>
     <nav class="material-tabs" aria-label="Seções de desenvolvimento">${materialTabs.map(([key,name])=>button(e(name),'material-tab',`data-value="${key}" ${tab===key?'aria-current="page"':''}`,tab===key?'active':'')).join('')}</nav>`;
-  const context=product?`<div class="material-context"><div><span class="eyebrow">PRODUTO SELECIONADO</span><h2>${e(product.name)}</h2><p>${e(product.description||'Registre o objetivo e as características deste produto.')}</p></div><div class="actions">${badge(materialStages.find(([key])=>key===product.stage)?.[1]||'Pesquisa',product.stage==='finalizado'?'ok':'blue')}${button('Editar produto','material-edit-product',itemRef(product.id),'small')}</div></div>${readinessPanel(product)}`:'';
+  const context=product?`<div class="material-context"><div><span class="eyebrow">PRODUTO SELECIONADO</span><h2>${e(product.name)}</h2><p>${e(product.description||'Registre o objetivo e as características deste produto.')}</p></div><div class="actions">${badge(materialStages.find(([key])=>key===product.stage)?.[1]||'Pesquisa',product.stage==='finalizado'?'ok':'blue')}${button('Editar produto','material-edit-product',itemRef(product.id),'small')}</div></div>${insightFold('TRL e histórico',readinessPanel(product),trlLabel(product))}`:'';
   let body='';
   if(tab==='overview'){
     body=`<div class="kpis">${materialMetric('Atividades em aberto',open,'tasks','list-todo')}${materialMetric('Atividades concluídas',done,'tasks','circle-check')}${materialMetric('Metas atingidas',goals.filter(x=>x.done>=x.target).length,'goals','target')}${materialMetric('Resultados registrados',results.length,'results','flask-conical')}</div>`;
@@ -2569,7 +2654,9 @@ async function materialsPage(requestedTab){
       {title:"Trabalho realizado",key:"note"},
     ],"material-worklogs"),"Total dedicado · "+workDuration(total),button("Registrar período","material-work-new","","primary"));
   }else if(tab==='goals'){
-    body=`<div class="toolbar"><p class="muted tiny">As metas são definidas pela Gestão. O progresso soma os resultados vinculados à mesma pessoa, produto e período.</p>${admin()?button(icon('plus')+'Nova meta','material-new-goal','','primary'):''}</div><div class="grid3 material-goals">${goals.map(g=>`<section class="card goal-card"><div class="between">${badge(g.product_name,'blue')}${badge(g.done>=g.target?'Atingida':today()>g.end_date?'Prazo encerrado':'Em andamento',g.done>=g.target?'ok':today()>g.end_date?'warn':'blue')}</div><h2>${e(g.title)}</h2><p class="goal-value"><strong>${fmt(g.done)}</strong> de ${fmt(g.target)} ${e(g.unit)}</p>${progress(g.done,g.target)}<p class="tiny muted">${e(g.person_name)} · ${human(g.start_date)} a ${human(g.end_date)}</p><div class="workflow-actions">${button('Registrar resultado','material-new-result',`data-product="${e(g.product_id)}" data-goal="${e(g.id)}"`,'small primary')}${admin()?button('Editar meta','material-edit-goal',itemRef(g.id),'small'):''}</div></section>`).join('')||empty('Nenhuma meta definida','A Gestão pode cadastrar uma meta para cada produto e período.','target')}</div>`;
+    body=insightFold('Como acompanhar as metas','<p class="insight-explainer">As metas são definidas pela Gestão. O progresso soma os resultados da mesma pessoa, produto e período. Abra uma meta para ver os resultados vinculados.</p>')+
+      (!compactActivities()&&admin()?'<div class="toolbar">'+button(icon('plus')+'Nova meta','material-new-goal','','primary')+'</div>':'')+goalCollection(goals,results,true)+
+      (compactActivities()?button(icon('plus')+'<span>Registrar resultado</span>','material-new-result','aria-label="Registrar resultado do material"','activity-fab insight-fab'):'');
     
   }else if(tab==='tasks'){
     if(compactActivities())return header+controls+context+await mobileActivities(tasks,{materials:true});
@@ -2599,7 +2686,7 @@ async function materialsPage(requestedTab){
     const evidenceTasks=tasks.filter(t=>t.evidence_log?.length);
     body+=card('Evidências das atividades',workflowList(evidenceTasks.map(t=>({id:t.id,title:t.title,action:'task-detail',note:`${t.product_name} · ${t.evidence_log.length} registros de evidência`})), 'Nenhuma evidência de atividade registrada'), 'Histórico completo das atividades do produto, independente do período dos resultados.');
   }
-  return header+controls+context+body;
+  return '<div class="insight-page insight-materials">'+header+controls+context+body+'</div>';
 }
 async function materialProductForm(id){
   const old=id?await api('/api/material-products/'+id):null,v=old||{stage:'ideacao'};
@@ -2687,7 +2774,7 @@ let submitModal = null,
   modalAfterSave = true;
 function dialog(title, html) {
   $("#editor").classList.remove("activity-sheet", "activity-detail");
-  if(compactActivities()&&(["tasks","myday"].includes(state.section)||state.section==="materials"))$("#editor").classList.add("activity-detail");
+  if(compactActivities()&&["tasks","myday","dashboard","goals","materials"].includes(state.section))$("#editor").classList.add("activity-detail");
   $("#modal-title").textContent = title;
   $("#modal-body").innerHTML = html;
   submitModal = null;
@@ -3832,7 +3919,7 @@ function goalForm(v = null) {
     { submit: "Criar meta" },
   );
 }
-async function activityForm() {
+async function activityForm(goalId='') {
   const gs = state.data.goals || (await load("goals"));
   formModal(
     "Registrar resultado",
@@ -3842,7 +3929,7 @@ async function activityForm() {
         ...gs
           .filter((x) => x.active)
           .map((x) => [x.id, `${x.person_name} · ${x.title}`]),
-      ]) +
+      ],goalId) +
       sel(
         "Indicador sem meta",
         "metric",
@@ -4029,6 +4116,12 @@ document.addEventListener("click", async (ev) => {
       return;
     }
     if(action==='activity-sort')return activitySortSheet();
+    if(action==='insight-filters')return insightFilterSheet(btn.dataset.period!=='false');
+    if(action==='goal-detail')return goalDetail(id,btn.dataset.kind==='material');
+    if(action==='goal-filters')return goalFilterSheet();
+    if(action==='goal-phase'){state.goalUi={...state.goalUi,phase:value};return refreshActivities();}
+    if(action==='goal-clear'){state.goalUi={};return refreshActivities();}
+    if(action==='goal-contribute')return activityForm(id);
     if(action==='activity-filter')return activityFilterSheet();
     if(action==='activity-order'){
       if(!activitySorts.some(([sort])=>sort===value))return;
@@ -4093,26 +4186,7 @@ document.addEventListener("click", async (ev) => {
     if(action==='material-result-detail')return materialResultDetail(id);
     if(action==='material-download')return materialDownload(id);
     if (action === "period") {
-      state.period = value;
-      const now = today();
-      state.to = now;
-      if (value === "all") {
-        state.from = "";
-        state.to = "";
-      } else if (value === "month") {
-        state.from = monthStart(now);
-        state.to = monthEnd(now);
-      } else if (value === "year") {
-        state.from = now.slice(0, 4) + "-01-01";
-        state.to = now.slice(0, 4) + "-12-31";
-      } else {
-        const x = new Date(now + "T12:00:00Z");
-        x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
-        state.from = x.toISOString().slice(0, 10);
-        x.setUTCDate(x.getUTCDate() + 6);
-        state.to = x.toISOString().slice(0, 10);
-      }
-      state.pagination = {};
+      applyInsightPeriod(value);
       return render();
     }
     if (action === "view") {
@@ -4520,10 +4594,15 @@ document.addEventListener("change", async (ev) => {
     console.error(err);
   }
 });
-let filterTimer,activitySearchTimer;
+let filterTimer,activitySearchTimer,goalSearchTimer;
 document.addEventListener('toggle',ev=>{if(ev.target?.dataset?.activityArchive==='completed')state.activityCompletedOpen=ev.target.open;},true);
 document.addEventListener("input", (ev) => {
   const x = ev.target;
+  if(x.id==='goal-search'){
+    state.goalUi={...state.goalUi,query:x.value};clearTimeout(goalSearchTimer);
+    const position=x.selectionStart;
+    goalSearchTimer=setTimeout(async()=>{try{await refreshActivities();const input=$('#goal-search');input?.focus({preventScroll:true});if(typeof position==='number')input?.setSelectionRange?.(position,position);}catch(err){toast(err.message,true);}},250);return;
+  }
   if(x.id==='activity-search'){
     state.activitySearch=x.value;state.activityLimits={};clearTimeout(activitySearchTimer);
     activitySearchTimer=setTimeout(()=>refreshActivities(true).catch(err=>toast(err.message,true)),250);return;
@@ -4596,7 +4675,7 @@ document.addEventListener("drop", async (ev) => {
 });
 state.view.crm = window.matchMedia("(max-width: 700px)").matches ? "list" : "board";
 window.matchMedia("(max-width: 700px)").addEventListener?.('change',()=>{
-  if(state.me&&(['tasks','myday'].includes(state.section)||state.section==='materials'))render();
+  if(state.me&&(['tasks','myday','dashboard','goals'].includes(state.section)||state.section==='materials'))render();
 });
 (async () => {
   icons();
