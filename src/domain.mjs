@@ -1,5 +1,5 @@
 import { materialCollections, developmentRoute, updateReadiness, workInterval, assertNoOverlap } from "./material-development.mjs";
-import { recordFollowers, scheduleReposts } from "./social-media.mjs";
+import { commissionReel, reviewReel, recordFollowers, scheduleReposts } from "./social-media.mjs";
 import { hashPassword, normalizeEmail, validEmail } from "./password.mjs";
 import { validateRoute, validateWrite, InputError, attachmentBytes } from "./validation.mjs";
 
@@ -233,6 +233,7 @@ export function workspaceDomain(snapshot, actorId) {
       if (name === "tasks" && id && p[3] === "review" && m === "POST") {
         if (!canManagePay) return respond({ error: "A avaliação cabe à Gestão." }, 403);
         const task = find();
+        if (task?.source === "content_reel") throw new InputError("Avalie a versão na ficha do conteúdo em Marketing.");
         if (!task?.pay_terms || task.status !== "concluida" || !task.evidence_log?.length)
           throw Error("Aguarde a entrega com evidência para avaliar.");
         const existing = db.taskPayments.filter(x => x.task_id === id);
@@ -324,6 +325,8 @@ export function workspaceDomain(snapshot, actorId) {
       }
       const existing = id ? find() : null;
       if (id && !existing) return respond({ error: "Registro não encontrado." }, 404);
+      if (name === "tasks" && existing?.source === "content_reel" && ["PATCH", "DELETE"].includes(m))
+        throw new InputError("Atualize esta atividade pela ficha do conteúdo em Marketing.");
       if (name !== "history") validateWrite(name, p[3], m, b, existing);
       if (name === "deals" && m === "POST") {
         const lead = leads.find(x => x.id === String(b.lead_id));
@@ -539,6 +542,8 @@ export function workspaceDomain(snapshot, actorId) {
         return respond(rows.map((x) => decorate(name, x)));
       }
       if (m === "DELETE") {
+        if (name === "marketing" && existing?.production_task_id)
+          throw new InputError("Preserve o conteúdo vinculado à atividade remunerada.");
         if(name==='tasks'&&(existing?.work_started_at||db['material-worklogs'].some(r=>r.task_id===id)))throw new InputError('Esta atividade possui horas registradas.');
         if(name==='tasks'&&db['material-results'].some(r=>r.task_id===id))throw Error('Esta atividade está vinculada a resultados de desenvolvimento e deve ser preservada.');
         if (name === "tasks" && (db.taskPayments.some(x => x.task_id === id) || (find()?.pay_terms && find()?.evidence_log?.length)))
@@ -716,6 +721,8 @@ export function workspaceDomain(snapshot, actorId) {
           const creator = isAdmin || piece.creator_id === me.id;
           const canPublish = isAdmin || isSocial;
           const action = b.action;
+          if (piece.production_task_id && ["approve", "changes"].includes(action) && !canManagePay)
+            return respond({ error: "Diego avalia a qualidade dos Reels remunerados." }, 403);
           if (action === "submit" && creator && ["planejamento", "producao", "ajustes_solicitados"].includes(stage)) {
             if (!b.url && !b.file?.data) throw Error("Adicione o link ou arquivo da entrega.");
             if (b.url && !webLink(b.url)) throw Error("Use um link HTTP ou HTTPS.");
@@ -746,12 +753,13 @@ export function workspaceDomain(snapshot, actorId) {
             if (action === "publish") {
               piece.workflow = "publicacao";
               piece.status = "publicado";
-              scheduleReposts(piece, me, users, belongsTo, add);
+              scheduleReposts(piece, me, users, belongsTo, add, tasks, db.marketing);
               for (const key of ["reach", "engagement", "leads_generated"]) piece[key] = Number(b[key]) || 0;
             }
           } else {
             throw Error("Ação indisponível nesta etapa.");
           }
+          reviewReel(piece, action, me, db, add, now, b.note);
           const description = {submit: "Versão enviada para revisão", approve: "Versão aprovada", changes: "Ajustes solicitados", schedule: "Planejamento de publicação salvo", publish: "Publicação registrada"}[action];
           piece.workflow_log = [...(piece.workflow_log || []), { action: description,
             version: piece.versions?.at(-1)?.number, note: b.note, author: me.name, created_at: now() }];
@@ -759,6 +767,9 @@ export function workspaceDomain(snapshot, actorId) {
           return respond(decorate(name, piece));
         }
         if (isExternal) throw Error("A Gestão edita o briefing das demandas externas.");
+        if (piece?.production_task_id && ((data.format && data.format !== piece.format) ||
+          (data.creator_id && data.creator_id !== piece.creator_id)))
+          throw new InputError("Preserve o formato e o responsável do Reel contratado.");
         if (piece && !isAdmin && piece.creator_id !== me.id) throw Error("A ficha pertence a outra pessoa.");
         if (piece && !["planejamento", "producao", "ajustes_solicitados"].includes(piece.workflow))
           throw Error("A ficha está em revisão ou publicação.");
@@ -932,6 +943,14 @@ export function workspaceDomain(snapshot, actorId) {
           evidence.attachment_id = attachment.id;
         }
         x.evidence_log = [...(x.evidence_log || []), evidence];
+      }
+      if (name === "marketing") {
+        if (m === "POST") commissionReel(x, me, users, add);
+        const production = tasks.find(task => task.id === x.production_task_id);
+        if (production) {
+          production.title = "Produzir Reel · " + x.title.slice(0, 175);
+          production.planned_date = production.due_date = x.delivery_due || x.planned_date;
+        }
       }
       if (newCredential) {
         const index = db.credentials.findIndex(entry => entry.user_id === x.id);

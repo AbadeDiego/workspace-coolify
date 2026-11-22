@@ -141,17 +141,22 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   const reel = await post("marketing",{startup_id:startup,creator_id:"3",title:"Reel teste",format:"reel"},diego);
   const reelRoute = "marketing/" + reel.id + "/workflow";
   await post(reelRoute, {action:"submit",url:"https://example.test/reel"},larissa,200);
-  await post(reelRoute, {action:"approve"},diego,200);
+  assert(reel.production_task_id);
+  const approveReel = () => fetch(base()+"/api/"+reelRoute, {method:"POST", headers:{Origin:origin,Cookie:diego,"Content-Type":"application/json"},body:JSON.stringify({action:"approve"})});
+  const approvals = await Promise.all([approveReel(),approveReel()]);
+  assert.deepEqual(approvals.map(r=>r.status).sort(),[200,400]);
+  assert.equal((await read("task-payments",larissa)).entries.filter(x=>x.kind==="base").length,1);
   const publication = {action:"publish",network:"Instagram",account:"@coleta",caption:"Reel",
-    published_at:"2026-11-14T01:30:00Z",post_url:"https://example.test/reel-publicado"};
+    published_at:"2090-11-14T01:30:00Z",post_url:"https://example.test/reel-publicado"};
   await post(reelRoute, publication,larissa,200);
   await post(reelRoute, publication,larissa,200);
   const reposts = (await read("tasks",larissa)).filter(task => task.source === "story_repost");
-  assert.deepEqual(reposts.map(task => task.planned_date).sort(),["2026-11-20","2026-11-27"]);
+  assert.deepEqual(reposts.map(task => task.planned_date).sort(),["2090-11-14","2090-11-16","2090-11-20","2090-11-27","2090-12-04","2090-12-11"]);
   assert(reposts.every(task => task.assigned_to === "3" && task.source_url === publication.post_url && !task.pay_terms));
   await patch("tasks/"+reposts[0].id,{pay_base:"20"},diego,400);
-  await patch("tasks/"+reposts[0].id,{status:"concluida",evidence:{note:"Repostado nos Stories"}},larissa);
-  assert.equal((await read("task-payments",larissa)).entries.length,0);
+  const completedRepost = reposts.find(task=>task.repost_offset===7);
+  await patch("tasks/"+completedRepost.id,{status:"concluida",evidence:{note:"Repostado nos Stories"}},larissa);
+  assert.equal((await read("task-payments",larissa)).entries.filter(x=>x.kind==="followers").length,0);
   const reading = {startup_id:startup,assigned_to:"3",account:"@Coleta",followers:8000};
   await post("follower-readings",reading,larissa,403);
   await api("follower-readings","GET",undefined,eduarda,403);
@@ -159,11 +164,11 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal((await post("follower-readings",{...reading,account:"coleta",followers:8600},diego)).growth,600);
   await post("follower-readings",{...reading,followers:8150},diego);
   assert.equal((await post("follower-readings",{...reading,followers:8600},diego)).growth,0);
-  assert.equal((await read("task-payments",larissa)).entries.length,0);
+  assert.equal((await read("task-payments",larissa)).entries.filter(x=>x.kind==="followers").length,0);
   const threshold = { ...reading, followers: 9050 };
   const readings = await Promise.all([post("follower-readings",threshold,diego),post("follower-readings",threshold,diego)]);
   assert.deepEqual(readings.map(row => row.blocks).sort(),[0,1]);
-  const followerPayments = (await read("task-payments",larissa)).entries;
+  const followerPayments = (await read("task-payments",larissa)).entries.filter(x=>x.kind==="followers");
   assert.deepEqual(followerPayments.map(row=>[row.kind,row.cents,row.follower_count]),[["followers",50000,1000]]);
   assert.equal((await read("follower-readings",larissa)).length,6);
   const roadmap=await post("technology",{startup_id:startup,title:"Entrega técnica",kind:"implementacao",status:"planejado",progress:0},diego);
@@ -176,6 +181,15 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   await patch("plans/"+plan.id+"/steps/"+steps[0].id,{status:"concluida"},diego);
   assert.equal((await read("plans",diego))[0].done,1);
 
+  // Reproduce the persisted two-task schedule from the previous release.
+  // Restart must supplement it without replacing the delivered Story.
+  const legacyIds = reposts.filter(task=>[7,14].includes(task.repost_offset))
+    .sort((a,b)=>a.repost_offset-b.repost_offset).map(task=>task.id);
+  const migrationClient = new pg.Client({connectionString:url.href});
+  await migrationClient.connect();
+  await migrationClient.query("UPDATE workspace_records SET data=(data-'repost_schedule_version') || jsonb_build_object('repost_task_ids',$1::jsonb) WHERE collection='marketing' AND record_key=$2",[JSON.stringify(legacyIds),reel.id]);
+  await migrationClient.query("DELETE FROM workspace_records WHERE collection='tasks' AND record_key=ANY($1::text[])",[reposts.filter(task=>!legacyIds.includes(task.id)).map(task=>task.id)]);
+  await migrationClient.end();
   await app.close();
   app = null;
   app = await start({...env,ADMIN_EMAIL:"",ADMIN_PASSWORD:""});
@@ -184,7 +198,12 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal((await read("material-goals",vanessa))[0].done,1);
   assert.equal((await read("task-payments",eduarda)).entries.length,1);
   assert.equal((await read("follower-readings",larissa)).length,6);
-  assert.equal((await read("tasks",larissa)).filter(task => task.source === "story_repost").length,2);
+  assert.equal((await read("tasks",larissa)).filter(task => task.source === "story_repost").length,6);
+  const retainedRepost=await read("tasks/"+completedRepost.id,larissa);
+  assert.equal(retainedRepost.status,"concluida");
+  assert.equal(retainedRepost.evidence_log[0].note,"Repostado nos Stories");
+  assert.equal(retainedRepost.planned_date,completedRepost.planned_date);
+  assert.deepEqual((await read("task-payments",larissa)).entries.filter(x=>x.kind==="base").map(x=>x.cents),[10000]);
   assert.equal((await read("material-products/"+product.id,vanessa)).trl_history.length,1);
   assert.equal((await read("material-experiments/"+experiment.id,vanessa)).version,2);
   assert.equal((await read("material-results",vanessa)).find(r=>r.experiment_id===experiment.id).protocol_snapshot.version,1);

@@ -2061,6 +2061,14 @@ async function marketingPage() {
       })), "Nenhuma demanda atribuída"));
   }
   h += card("Fila de publicação", workflowList(editorialActions(all), "Nenhum conteúdo aprovado aguardando publicação"));
+  const stories = (await load("tasks")).filter(task => task.source === "story_repost");
+  const upcomingStories = stories.filter(task => !["concluida", "cancelada"].includes(task.status))
+    .sort((a, b) => (a.planned_date || "").localeCompare(b.planned_date || ""));
+  h += card("Stories programados · sem remuneração", workflowList(upcomingStories.slice(0, 8).map(task => ({
+    id: task.id, title: task.title, action: "task-detail",
+    note: human(task.planned_date) + " · " + task.startup_name + " · " + label(task.status),
+  })), "Ao registrar um Reel publicado no Instagram, a agenda de Stories será criada automaticamente."),
+    "Seis abordagens em quatro semanas. A equipe executa e registra as evidências; o calendário editorial reúne as datas.");
   const view = state.view.marketing || "board";
   if (view === "calendar")
     h += card(
@@ -2071,9 +2079,11 @@ async function marketingPage() {
           date: x.planned_date,
           title: x.title,
           action: "marketing-edit",
-        })),
+        })).concat(periodRows(stories, "planned_date").map(task => ({
+          ...task, date: task.planned_date, action: "task-detail",
+        }))),
       ),
-      "Planejamento de publicação",
+      "Publicações e repostagens nos Stories · datas em Brasília",
       calendarControls(),
     );
   else if (view === "board")
@@ -2675,7 +2685,7 @@ function taskPaySummary(task) {
   if (!terms) return "";
   const review = task.pay_review;
   const bonus = task.bonus_review;
-  const eligible = managesTaskPay() && task.status === "concluida" && task.evidence_log?.length;
+  const eligible = task.source !== "content_reel" && managesTaskPay() && task.status === "concluida" && task.evidence_log?.length;
   const action = (title, value) => button(title, "task-pay-review", itemRef(task.id) + ` data-value="${value}"`, "small");
   return `<div class="section-label">REMUNERAÇÃO E QUALIDADE</div>
     <div class="workflow-stack">
@@ -2800,6 +2810,7 @@ async function personalFinancePage() {
 
 async function taskForm(record = null, template = null) {
   const old = record ? await api("/api/tasks/" + record) : null;
+  if (old?.source === "content_reel") return openReelContent(old);
   if (!state.startups.length || (old && !admin())) return;
   const products=materialAccess()?await api("/api/material-products"):[];
   const person = state.section === "myday"
@@ -2933,12 +2944,14 @@ function publicationTaskDetail(task) {
 }
 
 async function setTaskStatus(id, status) {
+  const linked = await api("/api/tasks/" + id);
+  if (linked.source === "content_reel") return openReelContent(linked);
   if (status !== "concluida") {
     await api("/api/tasks/" + id, "PATCH", { status });
     toast("Atividade atualizada");
     return render();
   }
-  const task = await api("/api/tasks/" + id);
+  const task = linked;
   const alreadyDone = task.status === "concluida";
   if (usesPublicationEvidence(task)) {
     const publication = latestPublicationEvidence(task);
@@ -2970,6 +2983,7 @@ async function setTaskStatus(id, status) {
 
 async function taskDetail(id) {
   const t = await api("/api/tasks/" + id);
+  if (t.source === "content_reel") return openReelContent(t);
   if (usesPublicationEvidence(t)) return publicationTaskDetail(t);
   let workSummary="";
   if(t.product_id&&materialAccess()){
@@ -3233,7 +3247,7 @@ function editorialActions(rows) {
 }
 function managementQueue(tasks, leads, pieces) {
   return [
-    ...tasks.filter(x => managesTaskPay() && x.pay_review?.status === "pending" && x.status === "concluida").map(x => ({
+    ...tasks.filter(x => x.source !== "content_reel" && managesTaskPay() && x.pay_review?.status === "pending" && x.status === "concluida").map(x => ({
       id: x.id, title: x.title, action: "task-detail",
       note: `Avaliar entrega remunerada · ${x.startup_name} · ${x.assignee_name}`,
     })),
@@ -3305,8 +3319,17 @@ function proposalForm(lead) {
     b => api("/api/leads/" + lead.id, "PATCH", { proposal: b }),
     { submit: "Salvar proposta" });
 }
-function contentDetail(piece) {
+async function openReelContent(task) {
+  const piece = (await api("/api/marketing")).find(piece => piece.id === task.source_piece_id);
+  if (piece) return contentDetail(piece);
+  toast("Conteúdo indisponível para este perfil.");
+}
+async function contentDetail(piece) {
   if (!piece) return;
+  const related = piece.production_task_id || piece.repost_task_ids ? await api("/api/tasks") : [];
+  const production = related.find(task => task.id === piece.production_task_id);
+  const reposts = related.filter(task => piece.repost_task_ids?.includes(task.id))
+    .sort((a, b) => (a.planned_date || "").localeCompare(b.planned_date || ""));
   const flow = marketingFlow(piece);
   const creator = admin() || piece.creator_id === state.me.id;
   const publisher = marketingAccess();
@@ -3328,6 +3351,8 @@ function contentDetail(piece) {
   dialog(piece.title, `
     <div class="detail-summary">${badge(piece.startup_name, "blue")}${badge(flow)}${badge(piece.format)}</div>
     <div class="workflow-stack">
+      ${piece.production_task_id ? `<section class="workflow-item"><b>Produção do Reel · R$ 100,00</b><p class="muted">Valor liberado uma única vez após a aprovação da versão pela Gestão. Repostagens nos Stories não geram pagamento.</p>${production ? badge(taskPayStatus(production), production.pay_review?.status === "approved" ? "ok" : "warn") : ""}</section>` : ""}
+      ${reposts.length ? `<section class="workflow-item"><b>Agenda de Stories · sem remuneração</b><p class="muted">Datas em Brasília. Use os Insights para escolher o horário; acrescente um contexto diferente em cada ação. A publicação no Instagram é feita pela equipe.</p>${workflowList(reposts.map(task => ({id: task.id, title: human(task.planned_date) + " · " + task.title, action: "task-detail", note: label(task.status)})), "Nenhuma repostagem agendada")}</section>` : ""}
       <section class="workflow-item"><b>Briefing</b><p class="detail-description">${e(piece.notes || "Briefing a definir")}</p>
         <p class="tiny muted">${e(personName(piece.creator_id, piece.creator_name))} · Entrega ${human(piece.delivery_due || piece.planned_date)}${piece.campaign ? " · " + e(piece.campaign) : ""}</p></section>
       <section class="workflow-item"><b>Versões da entrega</b>
@@ -3346,7 +3371,7 @@ function contentDetail(piece) {
 function contentAction(piece, action) {
   const p = piece.publication || {};
   const send = b => api("/api/marketing/" + piece.id + "/workflow", "POST", { ...b, action });
-  if (action === "approve") return formModal("Aprovar versão", text("Comentário de aprovação", "note"), send, { submit: "Aprovar versão" });
+  if (action === "approve") return formModal("Aprovar versão", (piece.production_task_id ? '<p class="notice full">Confirme a qualidade do Reel e a conformidade com o briefing. A aprovação libera R$ 100,00 no extrato da pessoa responsável, uma única vez.</p>' : "") + text("Comentário de aprovação", "note"), send, { submit: "Aprovar versão" });
   if (action === "changes") return formModal("Solicitar ajustes", text("Ajustes necessários", "note", "", "required"), send, { submit: "Enviar feedback" });
   if (action === "submit") return formModal("Enviar versão para revisão",
     sf("Link do material", "url", "", "url") +
@@ -3364,7 +3389,7 @@ function contentAction(piece, action) {
     sf("Conta ou perfil", "account", p.account, "text", "required") +
     text("Legenda", "caption", p.caption, "required") +
     datetimeField("Data e hora planejadas", "scheduled_at", p.scheduled_at) +
-    (publishing && piece.format === "reel" ? '<p class="notice full">Ao registrar um Reel do Instagram, o sistema agenda a repostagem nos Stories em 7 e 14 dias.</p>' : "") +
+    (publishing && piece.format === "reel" ? '<p class="notice full">Ao registrar a publicação no Instagram, serão criadas seis atividades de Stories: 1, 3, 7, 14, 21 e 28 dias depois. Datas ocupadas na mesma conta são deslocadas para o próximo dia livre. Cada ação traz uma sugestão de abordagem. Sem remuneração adicional; a equipe publica no Instagram. Agendas anteriores recebem as ações que faltam, preservando as tarefas já registradas.</p>' : "") +
     (publishing ? datetimeField("Data e hora efetivas", "published_at", p.published_at) +
       sf("Link da publicação", "post_url", p.post_url, "url", "required") +
       sf("Alcance", "reach", piece.reach || 0, "number", 'min="0" step="1"') +
@@ -3378,19 +3403,20 @@ function contentAction(piece, action) {
 function marketingForm(v = null) {
   const base = v || { startup_id: state.startup || state.startups[0]?.id, creator_id: state.me.id, format: "post" };
   formModal(v ? "Editar ficha de conteúdo" : "Novo conteúdo",
+    '<p class="notice full">Novos Reels criados por Diego para Social Media ou Marketing externo têm valor de R$ 100,00, sujeito à aprovação da qualidade. Após registrar a publicação no Instagram, a agenda de Stories será gerada sem remuneração adicional.</p>' +
     (v ? `<div class="notice full">${e(startupName(base.startup_id))}</div>` : startupsField(base.startup_id)) +
     (admin() ? sel("Responsável", "creator_id", assignedPeople(base.startup_id)
       .filter(x => ["admin", "marketing", "marketing_externo"].includes(x.role))
-      .map(x => [x.id, x.name]), base.creator_id, "required data-owner-field data-marketing-owner") : "") +
+      .map(x => [x.id, x.name]), base.creator_id, "required data-owner-field data-marketing-owner" + (v?.production_task_id ? " disabled" : "")) : "") +
     sf("Título", "title", base.title, "text", "required") +
     sf("Campanha", "campaign", base.campaign) +
-    sel("Formato", "format", ["reel", "story", "post", "video", "outro"].map(x => [x, label(x)]), base.format) +
+    sel("Formato", "format", ["reel", "story", "post", "video", "outro"].map(x => [x, label(x)]), base.format, v?.production_task_id ? "disabled" : "") +
     date("Prazo de entrega", "delivery_due", base.delivery_due || base.planned_date) +
     date("Data editorial prevista", "planned_date", base.planned_date) +
     text("Briefing e referências", "notes", base.notes) +
     (marketingFlow(base) === "planejamento" ? '<label class="checklist-row full"><input type="checkbox" name="production_started" value="yes"> Marcar como em produção</label>' : ""),
     b => api("/api/marketing" + (v ? "/" + v.id : ""), v ? "PATCH" : "POST", b),
-    { submit: v ? "Salvar ficha" : "Criar conteúdo", remove: v && admin() ? "marketing-delete" : null, id: v?.id });
+    { submit: v ? "Salvar ficha" : "Criar conteúdo", remove: v && admin() && !v.production_task_id ? "marketing-delete" : null, id: v?.id });
 }
 
 function techForm(v = null) {

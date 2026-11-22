@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { hashPassword, normalizeEmail, validEmail, validPassword } from "./password.mjs";
+import { upgradeRepostSchedules } from "./social-media.mjs";
 
 const seed = {
   ...JSON.parse(await readFile(new URL("./seed.json", import.meta.url), "utf8")),
@@ -75,6 +76,10 @@ export async function initialize(pool, env = process.env) {
     if (status.rowCount) {
       await client.query(annikeSchedule);
       await client.query(annikeDeliveries);
+      const data = await snapshot(client, true);
+      for (const row of data.records) row.serialized = JSON.stringify(row.data);
+      upgradeRepostSchedules(data);
+      await persist(client, data);
       return;
     }
 
