@@ -9,6 +9,7 @@ const seed = {
   "material-worklogs": [],
   "commercial-worklogs": [],
   "commercial-settlements": [],
+  "task-preferences": [],
 };
 const migration = await readFile(new URL("../sql/001-initial.sql", import.meta.url), "utf8");
 

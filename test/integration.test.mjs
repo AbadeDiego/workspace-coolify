@@ -55,6 +55,9 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   await req("/healthz");
   const html = await (await req("/")).text();
   assert.match(html, /src="\/app.js"/);
+  assert.match(html, /href="\/activities.css"/);
+  const activityCss=await req("/activities.css");assert.match(activityCss.headers.get("content-type"),/text\/css/);
+  assert.match(await activityCss.text(),/activity-mobile-shell/);
   assert.doesNotMatch(html, /workspace-startups-v2|coleta-prospeccao-/);
   assert.doesNotMatch(await (await req("/app.js")).text(), /window\.fetch\s*=/);
   await req("/src/seed.json", "GET", undefined, undefined, 404);
@@ -129,6 +132,10 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   const commercialTask=await post("tasks",{startup_id:startup,assigned_to:"2",title:"Retornos comerciais",expected_result:"Avançar os contatos para reunião"},diego);
   const workPeriod={task_id:commercialTask.id,work_started_at:"2026-11-16T08:00:00-03:00",work_ended_at:"2026-11-16T10:00:00-03:00",note:"Retornos aos contatos",metric:"contatos",quantity:4,result:"Contato pediu apresentação; agendar reunião."};
   const commercialLog=await post("commercial-worklogs",workPeriod,eduarda);
+  const preference={task_id:commercialTask.id,starred:true};
+  await api("task-preferences","PUT",preference,eduarda,200);
+  await api("task-preferences","PUT",{...preference,starred:false},annike,403);
+  assert.equal((await read("task-preferences",annike)).length,0);
   await post("commercial-worklogs",workPeriod,eduarda,400);
   await api("commercial-worklogs","GET",undefined,annike,403);
   await api("commercial-reports?userId=3","GET",undefined,eduarda,403);
@@ -217,6 +224,8 @@ test("API, login, registros e regras de negócio em PostgreSQL", { skip: !connec
   assert.equal((await read("material-goals",vanessa))[0].done,1);
   assert.equal((await read("task-payments",eduarda)).entries.length,1);
   assert.equal((await read("commercial-worklogs",eduarda))[0].id,commercialLog.id);
+  const savedPreference=(await read("task-preferences",eduarda)).find(p=>p.task_id===commercialTask.id);
+  assert.equal(savedPreference.starred,true);
   assert.equal((await read("commercial-reports?month=2026-11",eduarda))[0].settlement.status,"changes");
   // Exercise two closings against the real transaction lock with a clock
   // after month end, without changing the HTTP server's session clock.

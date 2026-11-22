@@ -81,3 +81,11 @@ O painel combina as horas com os resultados do CRM: primeiras abordagens, reuni�
 Diego pode solicitar esclarecimentos do mês e invalidar um período com justificativa, preservando o original para auditoria. A pessoa registra então o intervalo corrigido. Depois do encerramento do mês e com períodos registrados, Diego pode aprovar o fechamento, com avaliação obrigatória das horas e dos resultados. Isso inclui **R$ 1.500 uma única vez** no extrato da competência e preserva os períodos daquele mês. Não há descontos, adicionais por horas extras ou liberação de pagamento automáticos. O lançamento no extrato representa o valor aprovado a receber, sem efetuar transferência bancária.
 
 Novas atividades comerciais seguem o modelo mensal; não recebem novos valores individuais. Atividades remuneradas e lançamentos anteriores preservam suas condições e histórico. A referência mensal, o status da avaliação e o valor aprovado aparecem em **Finanças pessoais**, separados dos lançamentos por atividade existentes.
+
+## Navegação mobile das atividades
+
+Em telas de até 700 px, **Atividades** e **Meu dia** usam uma lista compartilhada para os cinco perfis. A navegação apresenta listas pessoais, startups e, para a Gestão, a equipe; busca por texto; filtros rápidos para todas, hoje, atrasadas e próximas; e um painel inferior para ordenar por prioridade/prazo, data de execução, prazo, destaques recentes ou título. Filtros adicionais permitem selecionar pessoa, prioridade e status. No Desenvolvimento de materiais, a mesma lista mantém a separação por produto.
+
+As atividades concluídas ficam recolhidas, com opção de expandir. Cada lista carrega até 40 itens por vez e permite mostrar mais. O botão flutuante cria atividades; tocar no círculo de conclusão abre o fluxo de evidência existente. A remuneração e as aprovações seguem as mesmas regras. O calendário e o balanço do contrato da Annike, além das filas comercial e editorial em Meu dia, continuam disponíveis.
+
+Estrelas são destaques pessoais salvos no banco por usuário, independentes da prioridade definida pela Gestão e dos destaques das outras pessoas. A ordenação e os filtros alteram apenas a visualização. A exportação de dados foi removida de todos os módulos e de todas as resoluções; downloads de evidências e materiais entregues foram preservados.

@@ -14,6 +14,7 @@ const digest = value => createHash("sha256").update(value).digest("hex");
 const assets = new Map(await Promise.all([
   ["/", "index.html", "text/html; charset=utf-8"],
   ["/app.js", "app.js", "text/javascript; charset=utf-8"],
+  ["/activities.css", "activities.css", "text/css; charset=utf-8"],
   ["/vendor.js", "vendor.js", "text/javascript; charset=utf-8"],
 ].map(async ([path, file, type]) => [path, { type, data: await readFile(new URL("../public/" + file, import.meta.url)) }])));
 

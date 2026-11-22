@@ -1,0 +1,116 @@
+/* Shared mobile activity UI. Financial rules and evidence flows live in the API. */
+@media screen and (max-width: 700px) {
+  body.activity-screen { background: #f5f6f9; }
+  .activity-screen .topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; justify-content: space-between; align-items: center;
+    min-height: 64px; height: auto; gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+    background: #f5f6f9; border-bottom: 1px solid #e8ebf0;
+  }
+  .activity-screen .breadcrumb { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .activity-screen #page-title { display: block; font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .activity-screen .crumb-root, .activity-screen .slash,
+  .activity-screen .mobile-module-field, .activity-screen .top-divider,
+  .activity-screen #startup-filter, .activity-screen #settings, .activity-screen #avatar { display: none; }
+  .activity-screen .top-actions { display: flex; gap: 2px; width: auto; flex: 0 0 auto; }
+  .activity-screen #open-search { display: inline-flex; padding: 10px; border: 0; background: transparent; }
+  .activity-screen #open-search span, .activity-screen #open-search kbd { display: none; }
+  .activity-screen #main {
+    padding: 0 max(12px, env(safe-area-inset-right)) calc(112px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  .activity-screen .app-footer { display: none; }
+  .activity-mobile-shell { min-width: 0; max-width: 100%; padding-top: 4px; padding-bottom: 96px; }
+  .activity-screen .activity-mobile-shell { padding-bottom: 0; }
+  .activity-tabs {
+    display: flex; align-items: stretch; gap: 22px; overflow-x: auto;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid #e2e6ee; margin: 0 0 22px; padding: 0 4px;
+    overscroll-behavior-inline: contain;
+  }
+  .activity-tabs::-webkit-scrollbar, .activity-quick-filters::-webkit-scrollbar { display: none; }
+  .activity-tabs button {
+    position: relative; flex: 0 0 auto; min-height: 52px; padding: 12px 0 14px;
+    background: none; border: 0; border-radius: 0;
+    color: #697386; font-size: 14px; font-weight: 500; white-space: nowrap;
+  }
+  .activity-tabs button.active { color: #326fc5; font-weight: 600; }
+  .activity-tabs button.active::after { content: ''; position: absolute; height: 3px; bottom: 0; left: 0; right: 0; background: #4385e8; border-radius: 4px 4px 0 0; }
+  .activity-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; margin-bottom: 18px; }
+  .activity-heading > div:first-child { min-width: 0; }
+  .activity-heading h1 { margin: 0; font-size: 23px; line-height: 1.25; font-weight: 600; letter-spacing: -.65px; overflow-wrap: anywhere; }
+  .activity-heading p { margin: 7px 0 0; color: #7a8495; font-size: 12px; }
+  .activity-tools { display: flex; gap: 2px; flex: 0 0 auto; }
+  .activity-tool { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 10px; border: 0; background: transparent; border-radius: 12px; color: #566176; }
+  .activity-tool svg { width: 21px; height: 21px; }
+  .activity-filter-count { position: absolute; right: 0; top: 0; min-width: 17px; height: 17px; border-radius: 50%; background: #4385e8; color: white; font-size: 10px; display: grid; place-items: center; }
+  .activity-search { display: flex; align-items: center; gap: 10px; margin: 0 4px 12px; padding: 0 14px; min-height: 46px; background: #fff; border: 1px solid #e6eaf1; border-radius: 13px; color: #98a2b3; }
+  .activity-search > svg { width: 18px; height: 18px; flex: 0 0 auto; }
+  .activity-search #activity-search { width: 100%; min-width: 0; border: 0; box-shadow: none; background: transparent; padding: 12px 0; color: #263247; font-size: 15px !important; }
+  .activity-search:focus-within { outline: 2px solid #4385e840; border-color: #4385e8; }
+  .activity-search #activity-search:focus { outline: none; }
+  .activity-search #activity-search::placeholder { color: #98a2b3; }
+  .activity-quick-filters { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 0 4px 4px; margin-bottom: 12px; overscroll-behavior-inline: contain; }
+  .activity-quick-filters button { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; white-space: nowrap; padding: 10px 13px; min-height: 44px; border: 1px solid #e5e9f0; background: #fff; color: #758094; border-radius: 22px; font-size: 12px; font-weight: 500; }
+  .activity-quick-filters button svg { width: 14px; height: 14px; }
+  .activity-quick-filters button.active { color: #326fc5; background: #eaf1fc; border-color: #cfdef6; font-weight: 600; }
+  .activity-order-caption { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin: 0 6px 8px; font-size: 11px; color: #8691a3; }
+  .activity-order-caption button { min-height: 44px; font-size: 12px; }
+  .activity-list-card, .activity-archive { background: #fff; border: 1px solid #e9ecf2; border-radius: 20px; overflow: hidden; box-shadow: 0 2px 4px #172b4d02; }
+  .activity-list { list-style: none; margin: 0; padding: 4px 0; }
+  .activity-row { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: start; gap: 2px; padding: 13px 6px 15px; }
+  .activity-row + .activity-row { border-top: 1px solid #f0f2f6; }
+  .activity-copy { min-width: 0; padding-top: 2px; }
+  .activity-title { display: block; width: 100%; text-align: left; padding: 5px 0; min-height: 44px; background: none; border: 0; color: #263247; font-size: 15px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+  .activity-description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 2px 0 5px; font-size: 12px; line-height: 1.6; color: #7d8799; overflow-wrap: anywhere; }
+  .activity-context { margin: 2px 0 9px; color: #8993a4; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+  .activity-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .activity-date { display: inline-flex; align-items: center; gap: 5px; color: #8290a3; font-size: 11px; font-weight: 500; }
+  .activity-date svg { width: 14px; height: 14px; }
+  .activity-date.is-late { color: #c76363; }
+  .activity-date.is-today { color: #4385e8; }
+  .activity-status { font-size: 10px; color: #8591a4; }
+  .activity-meta .priority { font-size: 9px; padding: 3px 6px; border-radius: 5px; }
+  .activity-check, .activity-star { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 44px; padding: 10px; border: 0; background: transparent; border-radius: 50%; color: #a3acba; }
+  .activity-check svg { width: 23px; height: 23px; stroke-width: 1.5; }
+  .activity-star svg { width: 21px; height: 21px; stroke-width: 1.5; }
+  .activity-star.is-starred { color: #d99a35; }
+  .activity-star.is-starred svg { fill: #d99a3524; }
+  .activity-star[disabled] { opacity: .45; }
+  .activity-check:active, .activity-tool:active, .activity-star:active { background: #f1f4fa; }
+  .activity-row.is-complete .activity-title { color: #939cad; }
+  .activity-row.is-complete .activity-check { color: #27a879; }
+  .activity-row.is-complete .activity-description { display: none; }
+  .activity-archive { margin-top: 14px; }
+  .activity-archive summary { display: flex; align-items: center; gap: 8px; min-height: 66px; padding: 18px 20px; color: #5a6579; font-size: 14px; font-weight: 500; list-style: none; cursor: pointer; }
+  .activity-archive summary::-webkit-details-marker { display: none; }
+  .activity-archive summary span { color: #98a2b3; }
+  .activity-archive summary svg { margin-left: auto; width: 18px; height: 18px; transition: transform .18s ease; }
+  .activity-archive[open] > summary svg { transform: rotate(180deg); }
+  .activity-more { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 52px; border: 0; border-top: 1px solid #eef0f5; background: #fff; color: #4385e8; font-size: 13px; }
+  .activity-more svg { width: 16px; height: 16px; }
+  .activity-fab { position: fixed; z-index: 22; right: max(20px,env(safe-area-inset-right)); bottom: max(22px,env(safe-area-inset-bottom)); display: inline-flex; align-items: center; gap: 9px; height: 56px; min-width: 56px; padding: 0 19px; border: 1px solid #d4e1f6; border-radius: 18px; background: #e4edfd; color: #3266aa; font-size: 13px; font-weight: 600; box-shadow: 0 5px 20px #3459891c; }
+  .activity-fab svg { width: 23px; height: 23px; }
+  body:has(dialog[open]) .activity-fab, body:has(.sidebar.open) .activity-fab { visibility: hidden; }
+  .activity-screen #toast { bottom: calc(92px + env(safe-area-inset-bottom)); }
+  dialog.activity-sheet, dialog.activity-detail {
+    margin: auto 0 0; width: 100%; max-width: 100%;
+    padding: 0 20px calc(24px + env(safe-area-inset-bottom));
+    border: 0; border-radius: 24px 24px 0 0; max-height: 88dvh;
+    box-shadow: 0 -12px 50px #172b4d16;
+  }
+  dialog.activity-detail { max-height: 94dvh; padding-inline: 16px; }
+  dialog.activity-sheet::before, dialog.activity-detail::before { content: ''; display: block; width: 36px; height: 4px; border-radius: 5px; background: #d9dee8; margin: 10px auto 8px; }
+  dialog.activity-sheet .dialog-title, dialog.activity-detail .dialog-title { background: #fff; padding: 6px 0 12px; top: 0; }
+  dialog.activity-sheet .dialog-title h2, dialog.activity-detail .dialog-title h2 { font-size: 20px; line-height: 1.4; }
+  dialog.activity-sheet #modal-eyebrow, dialog.activity-detail #modal-eyebrow { display: none; }
+  dialog.activity-sheet::backdrop, dialog.activity-detail::backdrop { background: #17203366; }
+  .activity-sheet-options { display: grid; gap: 4px; }
+  .activity-sheet-option { display: flex; justify-content: space-between; align-items: center; text-align: left; min-height: 60px; padding: 16px 12px; border: 0; border-radius: 12px; background: #fff; color: #556176; font-size: 15px; }
+  .activity-sheet-option[aria-pressed=true] { color: #326fc5; background: #edf3fd; font-weight: 600; }
+  .activity-sheet-option svg { width: 20px; height: 20px; }
+  .activity-sheet-note { margin: 20px 12px 0; color: #939cad; font-size: 12px; line-height: 1.6; }
+  dialog.activity-detail #operation-form > .form-actions { position: sticky; bottom: -24px; padding: 14px 0 max(16px,env(safe-area-inset-bottom)); border-top: 1px solid #edf0f5; background: #fff; z-index: 3; }
+  .activity-mobile-shell button:focus-visible, .activity-sheet-option:focus-visible { outline: 2px solid #4385e8; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .activity-archive summary svg { transition: none; } }
+}

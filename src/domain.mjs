@@ -116,6 +116,17 @@ export function workspaceDomain(snapshot, actorId) {
         (!filter || !x.startup_id || x.startup_id === filter) && canSee(collection, x));
       const find = () => db[table]?.find(x => String(x.id) === String(id));
       const canManagePay = isAdmin && me.id === "1";
+      if (name === "task-preferences") {
+        const preferences = db["task-preferences"] ||= [];
+        if (m === "GET") return respond(preferences.filter(row=>row.user_id===me.id&&canSee("tasks",tasks.find(t=>t.id===row.task_id))));
+        validateWrite(name, undefined, m, b);
+        const task = tasks.find(t=>t.id===b.task_id);
+        if (!canSee("tasks",task)) return respond({error:"Atividade fora do escopo deste perfil."},403);
+        if (typeof b.starred !== "boolean") throw new InputError("Informe se a atividade está em destaque.");
+        const old = preferences.find(row=>row.user_id===me.id&&row.task_id===task.id);
+        const data = {user_id:me.id,task_id:task.id,starred:b.starred,starred_at:b.starred?(old?.starred?old.starred_at:now()):null};
+        return respond(old?Object.assign(old,data):add("task-preferences",data));
+      }
       if (["commercial-worklogs", "commercial-reports", "commercial-settlements"].includes(name)) {
         validateWrite(name, undefined, m, b);
         const result = commercialRoute({name,id,method:m,body:b,url,db,me,add,now});

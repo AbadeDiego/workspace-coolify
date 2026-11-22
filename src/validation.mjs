@@ -9,6 +9,7 @@ export class InputError extends Error {
 
 const collections = {
   startups: "",
+  "task-preferences": "task_id starred",
   "follower-readings": "startup_id assigned_to account followers evidence_url",
   users: "name email role active job_title responsibilities avatar_url password",
   tasks: "startup_id product_id assigned_to title description expected_result priority status planned_date due_date checklist evidence work_started_at work_ended_at pay_base pay_bonus pay_quality pay_result",
@@ -51,6 +52,7 @@ export function validateRoute(parts, method) {
     );
   }
   if (name === "memberships") return !id && ["GET", "PUT"].includes(method);
+  if (name === "task-preferences") return !id && ["GET", "PUT"].includes(method);
   if (readOnly.has(name)) return !id && method === "GET";
   if (!Object.hasOwn(collections, name)) return false;
   if (method === "GET") return !id || ["tasks", "material-products", "material-goals", "material-results", "material-experiments"].includes(name);

@@ -63,7 +63,7 @@ const state = {
   sort: {},
   pagination: {},
   data: {},
-  exports: [],
+  
   calendar: 0,
   workDate: "",
   workPerson: "",
@@ -209,7 +209,7 @@ const kpi = (title, value, note, ic = "activity", tone = "", detail = "") => {
   return detail ? dashboardLink(body, detail, "kpi") : `<div class="kpi">${body}</div>`;
 };
 const intro = (title, sub, action = "") =>
-  `<div class="page-intro"><div><span class="eyebrow">${e(state.startup ? startupName(state.startup) : "SEU WORKSPACE, EM PERSPECTIVA")}</span><h1>${e(title)}</h1><p>${e(sub)}</p><p class="scope-context">${e(screenContext())}</p></div><div class="actions">${button(icon("download") + "Exportar", "export", "", "export-btn")}${action}</div></div>`;
+  `<div class="page-intro"><div><span class="eyebrow">${e(state.startup ? startupName(state.startup) : "SEU WORKSPACE, EM PERSPECTIVA")}</span><h1>${e(title)}</h1><p>${e(sub)}</p><p class="scope-context">${e(screenContext())}</p></div><div class="actions">${action}</div></div>`;
 function screenContext(){const company=selectedScope();if(state.section==='myday')return company+' · '+human(state.workDate || today());if(state.section==='personal-finance')return company+' · '+longMonth(state.payMonth || today().slice(0,7));if(state.section==='crm')return company+' · Carteira atual';if(state.section==='goals')return company+' · Ciclo informado em cada meta';if(['people','processes'].includes(state.section))return company+' · Posição atual';return company+' · '+(state.from&&state.to?human(state.from)+' a '+human(state.to):'Todo o período registrado')}
 const isMoneyColumn=c=>/(cents$)|^(income|expense|receita|value)$/.test(c.key||'')||/\(R\$\)|Receita realizada|Resultado|Saldo/.test(c.title||'');
 const options = (arr, value) =>
@@ -382,8 +382,9 @@ function resetWorkspace() {
     me: null, startups: [], users: [], memberships: [], templates: [],
     section: "myday", startup: "", period: "month",
     from: monthStart(today()), to: monthEnd(today()),
-    materialProduct: "", materialTab: "overview", materialStatus: "", workDate: "", workPerson: "", payMonth: "", payPerson: "", dashboardDetails: new Map(), data: {}, filter: {}, sort: {}, pagination: {}, calendar: 0, exports: [],
+    materialProduct: "", materialTab: "overview", materialStatus: "", workDate: "", workPerson: "", payMonth: "", payPerson: "", dashboardDetails: new Map(), data: {}, filter: {}, sort: {}, pagination: {}, calendar: 0, 
     view: { crm: window.matchMedia("(max-width: 700px)").matches ? "list" : "board" },
+    activityScope:"mine",activityRange:"",activitySort:"priority",activitySearch:"",activityFilter:{},activityFavoritesOnly:false,activityCompletedOpen:false,activityLimits:{},activityPreferences:{},
   });
   window.searchIndex = null;
   $("#editor").close();
@@ -438,6 +439,7 @@ let renderVersion = 0;
 async function render() {
   if (!state.me) return;
   const version = ++renderVersion;
+  document.body?.classList.toggle("activity-screen",compactActivities()&&["tasks","myday"].includes(state.section));
   nav();
   $("#page-title").textContent =
     (state.section === "marketing" && external() ? "Minhas entregas" : NAV.find((x) => x[0] === state.section)?.[2]) || "Workspace";
@@ -519,11 +521,7 @@ function table(rows, cols, key = "main", paginate = true, interactive = true) {
       );
     });
   }
-  if (interactive) state.exports = data.map((x) =>
-    Object.fromEntries(
-      cols.filter((c) => c.key).map((c) => [c.title, /(cents$)|^(income|expense|receita|value)$/.test(c.key) ? (x[c.key]==null?"Sem dados":(Number(x[c.key])/100).toFixed(2).replace(".", ",")) : x[c.key] ?? ""]),
-    ),
-  );
+  
   const per = 10,
     pages = Math.max(1, Math.ceil(data.length / per));
   const pg = interactive ? Math.min(state.pagination[key] || 1, pages) : 1;
@@ -945,17 +943,11 @@ async function dashboard(version = renderVersion) {
     chartLegend([{label:'Criadas',color:VIZ.blue},{label:'Concluídas',color:VIZ.green}]),
   );
   if (version === renderVersion) state.dashboardDetails = details;
-  state.exports = stats.map((x) => ({
-    Startup: x.name,
-    Atividades: x.total,
-    Concluidas: x.done,
-    Pendentes: x.open,
-    Leads: x.leads,
-    ...(admin() ? { Receita_R$: f.some(r=>String(r.startup_id)===String(x.id)&&r.entry_type==='receita')?Number(x.receita)/100:'Sem dados' } : {}),
-  }));
+  
   return h;
 }
 async function tasksPage() {
+  if (compactActivities()) return mobileActivities(await api("/api/tasks"));
   const rows = periodTasks(await load("tasks")),
     data = filtered(rows, "tasks");
   let h =
@@ -1010,7 +1002,7 @@ async function tasksPage() {
           }</section>`,
       )
       .join("")}</div>`;
-    state.exports = data;
+    
     return h;
   }
   return (
@@ -1070,6 +1062,92 @@ async function tasksPage() {
   );
 }
 const workPriority = { urgente: 0, alta: 1, media: 2, baixa: 3 };
+const compactActivities = () => window.matchMedia("(max-width: 700px)").matches;
+const activitySorts = [["priority","Prioridade e prazo"],["planned","Data de execução"],["due","Prazo"],["starred","Destaques recentes"],["title","Título"]];
+function activityDate(task, day=today()) {
+  const value=dateOnly(task.due_date||task.planned_date);
+  if(!value)return '<span class="activity-date muted">'+icon('calendar')+'Sem data</span>';
+  const delta=Math.round((Date.parse(value+'T12:00:00Z')-Date.parse(day+'T12:00:00Z'))/86400000);
+  const text=delta===0?'Hoje':delta===1?'Amanhã':delta<0?'Há '+Math.abs(delta)+(delta===-1?' dia':' dias'):new Date(value+'T12:00:00Z').toLocaleDateString('pt-BR',{day:'numeric',month:'short',timeZone:'UTC'});
+  const late=delta<0&&openTask(task);
+  return `<span class="activity-date ${late?'is-late':delta===0&&openTask(task)?'is-today':''}">${icon('clock')}<time datetime="${e(value)}" title="${task.due_date?'Prazo':'Execução'} · ${human(value)}">${e(text)}</time></span>`;
+}
+function sortActivityRows(rows, order, preferences={}) {
+  return [...rows].sort((a,b)=>{
+    let value=0;
+    if(order==='planned'||order==='due'){
+      const key=order==='planned'?'planned_date':'due_date';
+      value=(dateOnly(a[key])||'9999').localeCompare(dateOnly(b[key])||'9999');
+    }else if(order==='title')value=a.title.localeCompare(b.title,'pt-BR');
+    else if(order==='starred')value=String(preferences[b.id]?.starred_at||'').localeCompare(String(preferences[a.id]?.starred_at||''));
+    return value||compareWorkTasks(a,b);
+  });
+}
+function activityRow(task, preferences, day, showOwner) {
+  const starred=Boolean(preferences[task.id]?.starred),done=task.status==='concluida',cancelled=task.status==='cancelada';
+  const meta=[task.product_name||task.startup_name||startupName(task.startup_id),showOwner?personName(task.assigned_to,task.assignee_name):''].filter(Boolean).join(' · ');
+  return `<li class="activity-row ${done?'is-complete':''}" data-activity-id="${e(task.id)}">
+    ${button(icon(done?'circle-check':cancelled?'circle-minus':'circle'),done||cancelled?'task-detail':'task-status',itemRef(task.id)+` data-value="concluida" aria-label="${done?'Ver entrega de':cancelled?'Ver atividade cancelada':task.source==='content_reel'?'Abrir produção de':'Concluir com evidência:'} ${e(task.title)}"`,'activity-check')}
+    <div class="activity-copy">${button(e(task.title),'task-detail',itemRef(task.id),'activity-title')}
+      ${task.description?`<p class="activity-description">${e(task.description)}</p>`:''}
+      <p class="activity-context">${e(meta)}</p>
+      <div class="activity-meta">${activityDate(task,day)}${['urgente','alta'].includes(task.priority)&&openTask(task)?priority(task.priority):''}${['em_andamento','bloqueada'].includes(task.status)?`<span class="activity-status">${e(label(task.status))}</span>`:''}${task.commercial_work_minutes?`<span class="activity-status">${workDuration(task.commercial_work_minutes)} de trabalho</span>`:''}</div>
+    </div>
+    ${button(icon('star'),'activity-star',itemRef(task.id)+` aria-label="${starred?'Remover destaque de':'Destacar'} ${e(task.title)}" aria-pressed="${starred}"`,'activity-star '+(starred?'is-starred':''))}
+  </li>`;
+}
+async function mobileActivities(tasks,opts={}) {
+  const preferences=Object.fromEntries((await api('/api/task-preferences')).map(row=>[row.task_id,row]));
+  state.activityPreferences=preferences;
+  const daily=Boolean(opts.daily),scope=opts.materials||state.startup?'startup':state.activityScope||'mine',filter=state.activityFilter||{};
+  const day=daily&&state.workDate>=today()?state.workDate:today();
+  const range=state.activityRange|| (daily?'today':'all');
+  const title=opts.materials?'Atividades do material':scope==='team'?'Atividades da equipe':scope==='startup'?startupName(state.startup):'Minhas atividades';
+  const base=tasks.filter(t=>(!state.startup||opts.materials||t.startup_id===state.startup)&&
+    (scope!=='mine'||t.assigned_to===state.me.id)&&(!state.activityFavoritesOnly||preferences[t.id]?.starred)&&
+    (!filter.owner||t.assigned_to===filter.owner)&&(!filter.priority||t.priority===filter.priority)&&
+    (!state.activitySearch||[t.title,t.description,t.startup_name,t.product_name,t.assignee_name].join(' ').toLocaleLowerCase('pt-BR').includes(state.activitySearch.toLocaleLowerCase('pt-BR')))&&
+    (range==='all'||range==='late'&&openTask(t)&&t.due_date&&dateOnly(t.due_date)<day||
+      range==='today'&&((t.planned_date&&dateOnly(t.planned_date)<=day)||(t.due_date&&dateOnly(t.due_date)<=day))||
+      range==='future'&&dateOnly(t.planned_date||t.due_date)>day));
+  const rows=sortActivityRows(base,state.activitySort||'priority',preferences).filter(t=>!filter.status||t.status===filter.status);
+  const completedOnDay=task=>task.completed_at&&Number.isFinite(Date.parse(task.completed_at))&&new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date(task.completed_at))===day;
+  const open=rows.filter(openTask),completed=rows.filter(t=>t.status==='concluida'&&(!daily||range==='all'||completedOnDay(t))),cancelled=rows.filter(t=>t.status==='cancelada');
+  state.activityContext={daily,materials:opts.materials,day};
+  const limits=state.activityLimits||{},showOwner=admin()&&scope!=='mine';
+  const list=(items,key)=>`<ul class="activity-list">${items.slice(0,limits[key]||40).map(t=>activityRow(t,preferences,day,showOwner)).join('')}</ul>`+
+    (items.length>(limits[key]||40)?button('Mostrar mais '+icon('chevron-down'),'activity-more',`data-value="${key}"`,'activity-more'):'');
+  const activeFilters=[filter.owner,filter.priority,filter.status].filter(Boolean).length;
+  const scopeTabs=opts.materials?'':`<nav class="activity-tabs" aria-label="Listas de atividades">${button('Minhas atividades','activity-scope','data-value="mine" aria-pressed="'+(scope==='mine')+'"',scope==='mine'?'active':'')}${admin()?button('Equipe','activity-scope','data-value="team" aria-pressed="'+(scope==='team')+'"',scope==='team'?'active':''):''}${state.startups.map(s=>button(e(s.name),'activity-scope',`data-id="${e(s.id)}" data-value="startup" aria-pressed="${scope==='startup'&&state.startup===s.id}"`,scope==='startup'&&state.startup===s.id?'active':'')).join('')}</nav>`;
+  return `<div class="activity-mobile-shell">${scopeTabs}<header class="activity-heading"><div><h1>${e(title)}</h1><p>${open.length} ${open.length===1?'atividade pendente':'atividades pendentes'}${daily?' · '+human(day):''}</p></div><div class="activity-tools">${button(icon('arrow-up-down'),'activity-sort','aria-label="Ordenar atividades" aria-haspopup="dialog"','activity-tool')}${button(icon('sliders-horizontal')+(activeFilters?'<span class="activity-filter-count">'+activeFilters+'</span>':''),'activity-filter','aria-label="Filtrar atividades" aria-haspopup="dialog"','activity-tool')}</div></header>
+    <label class="activity-search">${icon('search')}<span class="sr-only">Buscar atividades</span><input id="activity-search" type="search" placeholder="Buscar uma atividade" value="${e(state.activitySearch||'')}" autocomplete="off"></label>
+    <div class="activity-quick-filters" role="group" aria-label="Período das atividades">${[['all','Todas'],['today',daily?'Para executar':'Hoje'],['late','Atrasadas'],['future','Próximas']].map(([key,title])=>button(title,'activity-range',`data-value="${key}" aria-pressed="${range===key}"`,range===key?'active':'')).join('')}${button(icon('star')+'Destaques','activity-favorites',`aria-pressed="${Boolean(state.activityFavoritesOnly)}"`,state.activityFavoritesOnly?'active':'')}</div>
+    <div class="activity-order-caption">${e(activitySorts.find(([key])=>key===(state.activitySort||'priority'))?.[1])}${activeFilters||state.activitySearch?button('Limpar filtros','activity-clear','','text-link'):''}</div>
+    <section class="activity-list-card" aria-label="Atividades pendentes">${open.length?list(open,'open'):empty('Tudo organizado por aqui',rows.length?'Veja as entregas abaixo ou altere os filtros.':'Nenhuma atividade corresponde a esta seleção.','list-checks')}</section>
+    ${completed.length?`<details class="activity-archive" data-activity-archive="completed" ${state.activityCompletedOpen||filter.status==='concluida'?'open':''}><summary>Concluídas <span>${completed.length}</span>${icon('chevron-down')}</summary>${list(completed,'completed')}</details>`:''}
+    ${cancelled.length?`<details class="activity-archive"><summary>Canceladas <span>${cancelled.length}</span>${icon('chevron-down')}</summary>${list(cancelled,'cancelled')}</details>`:''}
+    ${state.startups.length?button(icon('plus')+'<span>Nova atividade</span>',opts.materials?'material-new-task':'new-task','aria-label="Criar nova atividade"','activity-fab'):''}</div>`;
+}
+function activitySortSheet(){
+  dialog('Ordenar por',`<div class="activity-sheet-options">${activitySorts.map(([key,title])=>button(`<span>${e(title)}</span>${(state.activitySort||'priority')===key?icon('check'):''}`,'activity-order',`data-value="${key}" aria-pressed="${(state.activitySort||'priority')===key}"`,'activity-sheet-option')).join('')}</div><p class="activity-sheet-note">A ordenação muda a sua visualização. As prioridades definidas pela Gestão são preservadas.</p>`);
+  $('#editor').classList.add('activity-sheet');
+}
+function activityFilterSheet(){
+  const f=state.activityFilter||{},ctx=state.activityContext||{};
+  formModal('Filtrar atividades',
+    (admin()?sel('Responsável','owner',[['','Todas as pessoas'],...state.users.map(u=>[u.id,u.name])],f.owner):'')+
+    sel('Prioridade','priority',[['','Todas as prioridades'],...Object.keys(workPriority).map(k=>[k,label(k)])],f.priority)+
+    sel('Status','status',[['','Todos os status'],...['pendente','em_andamento','bloqueada','concluida','cancelada'].map(k=>[k,label(k)])],f.status)+
+    (ctx.daily?sf('Data de referência','day',ctx.day,'date',`min="${today()}"`):''),
+    async body=>{state.activityFilter={owner:body.owner||'',priority:body.priority||'',status:body.status||''};if(admin()&&body.owner&&body.owner!==state.me.id&&(!state.activityScope||state.activityScope==='mine'))state.activityScope='team';if(ctx.daily)state.workDate=body.day||today();state.activityLimits={};},
+    {submit:'Aplicar filtros'});
+  $('#editor').classList.add('activity-sheet');
+}
+async function refreshActivities(focusSearch=false){
+  const y=window.scrollY||0,position=focusSearch?$('#activity-search')?.selectionStart:null;
+  await render();window.scrollTo(0,y);
+  if(focusSearch){const field=$('#activity-search');field?.focus({preventScroll:true});if(typeof position==='number')field?.setSelectionRange?.(position,position);}
+}
 const compareWorkTasks = (a, b) =>
   (workPriority[a.priority] ?? 4) - (workPriority[b.priority] ?? 4) ||
   (dateOnly(a.due_date) || "9999").localeCompare(dateOnly(b.due_date) || "9999") ||
@@ -1166,12 +1244,7 @@ function dailyWork(tasks, team) {
   const { queue, future, unscheduled, blocked, completed } = organizeWorkDay(visible, day);
   const showDeliveryCalendar = external() || (isManager && owner === "4");
   const late = queue.filter(t => t.due_date && dateOnly(t.due_date) < day);
-  state.exports = queue.map((t, i) => ({
-    Ordem: i + 1, Atividade: t.title, Responsável: personName(String(t.assigned_to), t.assignee_name),
-    Startup: t.startup_name || startupName(t.startup_id),
-    Prioridade: label(t.priority), Execução: dateOnly(t.planned_date), Prazo: dateOnly(t.due_date),
-    Status: label(t.status),
-  }));
+  
   const section = (title, rows, mode) => rows.length
     ? card(title, workTaskList(rows, day, mode, showOwner), rows.length + (rows.length === 1 ? " atividade" : " atividades"))
     : "";
@@ -1208,13 +1281,18 @@ async function planTask(id) {
 
 async function myday() {
   const [tasks, leads, pieces] = await Promise.all([
-    load("tasks"),
+    compactActivities()?api("/api/tasks"):load("tasks"),
     state.me.role === "comercial" ? load("leads") : [],
     !admin() && marketingViewer() ? load("marketing") : [],
   ]);
   const assignedIds = new Set(tasks.map(task => String(task.assigned_to)));
   const team = admin() ? state.users.filter(person => person.active || assignedIds.has(String(person.id))) : [];
-  let h = dailyWork(tasks, team);
+  let h = compactActivities()?await mobileActivities(tasks,{daily:true}):dailyWork(tasks, team);
+  if(compactActivities()&&external()){
+    h+=cabraTechReelSummary(tasks);
+    const future=organizeWorkDay(tasks,today()).future;
+    if(future.length)h+='<details class="activity-archive"><summary>Calendário de entregas'+icon('chevron-down')+'</summary>'+upcomingWorkCalendar(future)+'</details>';
+  }
   if (state.me.role === "comercial")
     h += card("Agenda comercial", workflowList(salesAgenda(leads), "Nenhum próximo passo comercial"));
   if (state.me.role === "marketing")
@@ -1229,13 +1307,7 @@ async function myday() {
 async function goalsPage() {
   if(state.me?.role === "desenvolvimento")return materialsPage("goals");
   const [gs, logs] = await Promise.all([load("goals"), load("activities")]);
-  state.exports = gs.map((g) => ({
-    Pessoa: g.person_name,
-    Meta: g.title,
-    Realizado: g.done,
-    Alvo: g.target,
-    Periodo: label(g.cadence),
-  }));
+  
   return (
     intro(
       "Objetivos claros. Evolução visível.",
@@ -1320,7 +1392,7 @@ async function crmPage() {
           '<div class="lane-empty">Sem contatos nesta etapa</div>'
         }</section>`,
     ).join("")}</div>`;
-    state.exports = data;
+    
   } else
     h += card(
       "Carteira de contatos",
@@ -2058,7 +2130,7 @@ async function marketingPage() {
       )
       .join("")}</div></div>`;
   if (external()) {
-    state.exports = all.map(x => ({ Conteúdo: x.title, Startup: x.startup_name, Prazo: x.delivery_due || x.planned_date, Etapa: label(marketingFlow(x)) }));
+    
     return intro("Minhas entregas", "Briefings, prazos e revisões das suas demandas.") +
       card("Demandas atribuídas", workflowList(all.map(x => ({
         title: x.title, id: x.id, action: "marketing-edit",
@@ -2138,12 +2210,7 @@ async function marketingPage() {
       ),
     );
   h += await campaignCard();
-  state.exports = rows.map(x => ({
-    Conteúdo: x.title, Startup: x.startup_name, Campanha: x.campaign, Responsável: x.creator_name,
-    Etapa: label(marketingFlow(x)), Planejada: x.publication?.scheduled_at || x.planned_date,
-    Publicada: x.publication?.published_at, Link: x.publication?.post_url,
-    Alcance: x.reach, Engajamentos: x.engagement, Leads: x.leads_generated,
-  }));
+  
   return h;
 }
 async function techPage() {
@@ -2198,7 +2265,7 @@ async function techPage() {
           }</section>`,
       )
       .join("")}</div>`;
-    state.exports = data;
+    
     return h;
   }
   h += card(
@@ -2251,7 +2318,7 @@ async function techPage() {
     ),
     "Itens concluídos e suas versões",
   );
-  state.exports = data;
+  
   return h;
 }
 async function processPage() {
@@ -2294,7 +2361,7 @@ async function processPage() {
             )}${t.steps.length > 3 ? `<div class="task-meta">+ ${t.steps.length - 3} etapas</div>` : ""}</div>${admin() ? `<div class="flex">${button("Iniciar plano", "new-plan", `data-id="${t.id}"`, "small primary")}${button("Criar tarefa", "task-template", `data-id="${t.id}"`, "small")}${button(icon("copy"), "template-copy", `data-id="${t.id}" aria-label="Duplicar modelo"`, "icon-btn")}</div>` : ""}</section>`,
       )
       .join("")}</div>`;
-  state.exports = plans;
+  
   return h;
 }
 async function peoplePage() {
@@ -2314,17 +2381,7 @@ async function peoplePage() {
           String(m.startup_id) === state.startup,
       ),
   );
-  state.exports = shown.map((x) => ({
-    Nome: x.name,
-    Cargo: x.job_title,
-    Email: x.email,
-    Perfil: label(x.role),
-    Acesso: x.active ? "Ativo" : "Suspenso",
-    Startups: members
-      .filter((m) => String(m.user_id) === String(x.id))
-      .map((m) => startupName(m.startup_id))
-      .join(", "),
-  }));
+  
   return (
     intro(
       "Pessoas conectadas ao propósito.",
@@ -2496,7 +2553,7 @@ async function materialsPage(requestedTab){
     }).join('')||empty('Nenhum produto cadastrado','Crie o primeiro produto para organizar seu desenvolvimento.')}</div>`;
     const queue=tasks.filter(openTask).sort(compareWorkTasks);
     body+=card('Próximas atividades',workflowList(queue.map(t=>({id:t.id,title:t.title,action:'task-detail',note:[t.product_name,label(t.priority),human(t.due_date),label(t.status)].join(' · ')})),'Nenhuma atividade pendente'), 'Prioridade, prazo e data de execução. A etapa do produto é atualizada separadamente das atividades.',button('Nova atividade','material-new-task','','small'));
-    state.exports=products.filter(p=>!selected||p.id===selected).map(p=>({Produto:p.name,Etapa:materialStages.find(([k])=>k===p.stage)?.[1]}));
+    
   }else if(tab==='experiments'){
     body=card("Roteiros de experimentos",table(experiments,[
       {title:"Experimento",key:"title",render:x=>button(e(x.title),"material-experiment-detail",itemRef(x.id),"text-link")},
@@ -2513,8 +2570,9 @@ async function materialsPage(requestedTab){
     ],"material-worklogs"),"Total dedicado · "+workDuration(total),button("Registrar período","material-work-new","","primary"));
   }else if(tab==='goals'){
     body=`<div class="toolbar"><p class="muted tiny">As metas são definidas pela Gestão. O progresso soma os resultados vinculados à mesma pessoa, produto e período.</p>${admin()?button(icon('plus')+'Nova meta','material-new-goal','','primary'):''}</div><div class="grid3 material-goals">${goals.map(g=>`<section class="card goal-card"><div class="between">${badge(g.product_name,'blue')}${badge(g.done>=g.target?'Atingida':today()>g.end_date?'Prazo encerrado':'Em andamento',g.done>=g.target?'ok':today()>g.end_date?'warn':'blue')}</div><h2>${e(g.title)}</h2><p class="goal-value"><strong>${fmt(g.done)}</strong> de ${fmt(g.target)} ${e(g.unit)}</p>${progress(g.done,g.target)}<p class="tiny muted">${e(g.person_name)} · ${human(g.start_date)} a ${human(g.end_date)}</p><div class="workflow-actions">${button('Registrar resultado','material-new-result',`data-product="${e(g.product_id)}" data-goal="${e(g.id)}"`,'small primary')}${admin()?button('Editar meta','material-edit-goal',itemRef(g.id),'small'):''}</div></section>`).join('')||empty('Nenhuma meta definida','A Gestão pode cadastrar uma meta para cada produto e período.','target')}</div>`;
-    state.exports=goals.map(g=>({Produto:g.product_name,Meta:g.title,Pessoa:g.person_name,Realizado:g.done,Alvo:g.target,Unidade:g.unit,Início:g.start_date,Prazo:g.end_date}));
+    
   }else if(tab==='tasks'){
+    if(compactActivities())return header+controls+context+await mobileActivities(tasks,{materials:true});
     const list=tasks.filter(t=>!state.materialStatus||t.status===state.materialStatus).sort(compareWorkTasks);
     body=`<div class="material-controls">${sel('Status','material-status',[['','Todos os status'],...['pendente','em_andamento','bloqueada','concluida','cancelada'].map(x=>[x,label(x)])],state.materialStatus||'','id="material-status"')}${button(icon('plus')+'Nova atividade','material-new-task','','primary')}</div>`;
     body+=card('Atividades por produto',table(list,[
@@ -2628,6 +2686,8 @@ const PAGES = {
 let submitModal = null,
   modalAfterSave = true;
 function dialog(title, html) {
+  $("#editor").classList.remove("activity-sheet", "activity-detail");
+  if(compactActivities()&&(["tasks","myday"].includes(state.section)||state.section==="materials"))$("#editor").classList.add("activity-detail");
   $("#modal-title").textContent = title;
   $("#modal-body").innerHTML = html;
   submitModal = null;
@@ -2789,7 +2849,7 @@ async function commercialWorkPage(){
     .filter(r=>Date.parse(r.work_started_at)<Date.parse(monthEnd(month+'-01')+'T23:59:59.999-03:00')&&Date.parse(r.work_ended_at)>Date.parse(month+'-01T00:00:00-03:00'))
     .sort((a,b)=>b.work_started_at.localeCompare(a.work_started_at));
   state.commercialReports=reports;
-  state.exports=logs.map(r=>({Pessoa:r.person_name,Atividade:r.task_title,Inicio:r.work_started_at,Fim:r.work_ended_at,Minutos:r.work_minutes,Trabalho:r.note,Indicador:commercialMetric(r.metric),Quantidade:r.quantity,Resultado:r.result,Situacao:r.voided_at?'Invalidado':'Registrado'}));
+  
   return intro("Horas e resultados do Comercial","20 horas semanais e R$ 1.500 mensais, com foco nas entregas e no avanço da carteira.",button("Registrar período","commercial-work-new","","primary"))+
     `<div class="daily-controls">${sf("Mês de acompanhamento","commercial-month",month,"month",'id="commercial-month"')}${admin()?sel("Pessoa","commercial-person",[["","Todo o Comercial"],...state.users.filter(u=>u.role==='comercial').map(u=>[u.id,u.name])],person,'id="commercial-person"'):""}</div>`+
     (reports.length?reports.map(r=>commercialSummary(r)+card("Horas por semana · "+r.person_name,table(r.weeks,[
@@ -2891,10 +2951,7 @@ async function personalFinancePage() {
     id: x.id, title: x.title, action: "task-detail",
     note: [x.startup_name, manager && x.assignee_name, taskPayStatus(x), "Valor previsto " + brl(x.pay_terms.base_cents)].filter(Boolean).join(" · "),
   })), "Nenhuma atividade aguardando entrega ou avaliação"), "Pendências atuais de todos os meses, fora do total a receber.");
-  state.exports = approved.map(x => ({
-    Mês: x.month, Pessoa: x.assignee_name, Startup: x.startup_name, Atividade: x.title,
-    Tipo: paymentType(x), Valor_R$: (x.cents / 100).toFixed(2).replace(".", ","),
-  }));
+  
   return intro(manager ? "Remuneração da equipe" : "Finanças pessoais",
     manager ? "Acompanhe as entregas a avaliar e o total aprovado por pessoa." : "Consulte os valores aprovados das suas atividades.") +
     controls + `<div class="kpis">
@@ -3900,30 +3957,7 @@ async function notificationItems() {
 async function notifications() {
   dialog("Central de notificações", workflowList(await notificationItems(), "Nenhuma pendência no momento"));
 }
-function exportCSV() {
-  const rows = state.exports;
-  if (!rows.length) {
-    toast("Não há registros para exportar com estes filtros.");
-    return;
-  }
-  const keys = [...new Set(rows.flatMap((x) => Object.keys(x)))],
-    cell = (v) => {
-      let value = String(typeof v === "object" ? JSON.stringify(v) : (v ?? ""));
-      if (typeof v === "string" && /^[=+@-]/.test(value) && !/^[-+]?\d+([,.]\d+)?$/.test(value)) value = "'" + value;
-      return '"' + value.replace(/"/g, '""') + '"';
-    };
-  const csv =
-    "\uFEFF" +
-    [
-      keys.map(cell).join(";"),
-      ...rows.map((x) => keys.map((k) => cell(x[k])).join(";")),
-    ].join("\r\n");
-  download(
-    new Blob([csv], { type: "text/csv;charset=utf-8" }),
-    `workspace-${state.section}-${state.startup ? startupName(state.startup).replace(/\s/g, "-") : "consolidado"}-${today()}.csv`,
-  );
-  toast("Relatório exportado");
-}
+
 function download(blob, name) {
   const url = URL.createObjectURL(blob),
     a = document.createElement("a");
@@ -3936,6 +3970,7 @@ function download(blob, name) {
 }
 async function navigate(section) {
   if (!canOpen(section) || !PAGES[section]) return;
+  if(section!==state.section&&['tasks','myday'].includes(section))state.activityRange='';
   $("#editor").close();
   state.section = section;
   state.pagination = {};
@@ -3993,6 +4028,28 @@ document.addEventListener("click", async (ev) => {
       $("#editor").close();
       return;
     }
+    if(action==='activity-sort')return activitySortSheet();
+    if(action==='activity-filter')return activityFilterSheet();
+    if(action==='activity-order'){
+      if(!activitySorts.some(([sort])=>sort===value))return;
+      state.activitySort=value;state.activityLimits={};$('#editor').close();return refreshActivities();
+    }
+    if(action==='activity-scope'){
+      state.activityScope=value;state.startup=value==='startup'?id:'';state.activityFilter={};state.activityLimits={};
+      $('#startup-filter').value=state.startup;return refreshActivities();
+    }
+    if(action==='activity-range'){state.activityRange=value;state.activityLimits={};return refreshActivities();}
+    if(action==='activity-favorites'){state.activityFavoritesOnly=!state.activityFavoritesOnly;state.activityLimits={};return refreshActivities();}
+    if(action==='activity-clear'){
+      state.activityFilter={};state.activitySearch='';state.activityFavoritesOnly=false;state.activityRange=state.section==='myday'?'today':'all';state.activityLimits={};return refreshActivities();
+    }
+    if(action==='activity-more'){state.activityLimits||={};state.activityLimits[value]=(state.activityLimits[value]||40)+40;return refreshActivities();}
+    if(action==='activity-star'){
+      btn.disabled=true;
+      try{await api('/api/task-preferences','PUT',{task_id:id,starred:!state.activityPreferences?.[id]?.starred});await refreshActivities();}
+      finally{btn.disabled=false;}
+      return;
+    }
     if (action === "reload") return render();
     if (action === "navigate") return navigate(value);
     if (action === "dashboard-detail" && state.section === "dashboard") {
@@ -4035,7 +4092,6 @@ document.addEventListener("click", async (ev) => {
     if(action==='material-new-result')return materialResultForm(btn.dataset.product,btn.dataset.goal);
     if(action==='material-result-detail')return materialResultDetail(id);
     if(action==='material-download')return materialDownload(id);
-    if (action === "export") return exportCSV();
     if (action === "period") {
       state.period = value;
       const now = today();
@@ -4464,9 +4520,14 @@ document.addEventListener("change", async (ev) => {
     console.error(err);
   }
 });
-let filterTimer;
+let filterTimer,activitySearchTimer;
+document.addEventListener('toggle',ev=>{if(ev.target?.dataset?.activityArchive==='completed')state.activityCompletedOpen=ev.target.open;},true);
 document.addEventListener("input", (ev) => {
   const x = ev.target;
+  if(x.id==='activity-search'){
+    state.activitySearch=x.value;state.activityLimits={};clearTimeout(activitySearchTimer);
+    activitySearchTimer=setTimeout(()=>refreshActivities(true).catch(err=>toast(err.message,true)),250);return;
+  }
   if (x.id === "login-email" || x.id === "login-password") clearLoginError();
   if (x.id === "global-search") return updateSearch(x.value);
   if (x.dataset.filter && x.tagName === "INPUT") {
@@ -4534,6 +4595,9 @@ document.addEventListener("drop", async (ev) => {
   }
 });
 state.view.crm = window.matchMedia("(max-width: 700px)").matches ? "list" : "board";
+window.matchMedia("(max-width: 700px)").addEventListener?.('change',()=>{
+  if(state.me&&(['tasks','myday'].includes(state.section)||state.section==='materials'))render();
+});
 (async () => {
   icons();
   try {
